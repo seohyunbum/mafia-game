@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "_comment": "전역 규칙 수치. status 가 confirmed 면 사용자가 직접 말한 규칙이라 임의로 바꾸지 않는다. interpretation 은 내 해석이라 답이 오면 여기만 고치면 된다. undecided 는 null 로 남긴다 (임의값 금지). 정본 설명은 docs/DESIGN.md",
 
   "character": {
@@ -9,11 +9,26 @@
 
   "night_kill": {
     "instant_death": true,
-    "_instant_death_status": "confirmed (Q2) — HP 무시하고 확정 사망",
-    "targets_per_night": 1,
-    "_targets_per_night_status": "interpretation (Q10) — 마피아팀 합의 1킬",
+    "_instant_death_status": "confirmed (Q2) — 찍힌 사람은 HP 무시하고 확정 사망",
+    "kills_per_night": 1,
+    "_kills_per_night_status": "interpretation (Q10) — 마피아팀 합의 1회. 폭탄마가 쓰면 일반 살해를 대체한다",
     "may_skip": true,
     "_may_skip_status": "interpretation (Q19) — 살해를 거르는 밤 허용"
+  },
+
+  "bomber": {
+    "candidate_count": 3,
+    "_candidate_count_status": "confirmed — 후보 3명을 고른다",
+    "collateral_damage": 1,
+    "_collateral_damage_status": "confirmed — 찍히지 않은 후보는 HP 1 감소",
+    "allow_fewer_candidates_when_short": true,
+    "_allow_fewer_candidates_when_short_status": "interpretation — 후보 세울 생존자가 3명 미만이면 있는 만큼. 막판에 밤이 막히면 안 된다",
+    "can_target_own_faction": false,
+    "_can_target_own_faction_status": "interpretation (Q12c) — 후보에 마피아팀(자신 포함)을 넣지 않는다",
+    "uses_per_game": null,
+    "_uses_per_game_status": "interpretation (Q12b) — null = 횟수 제한 없음. '폭탄'이라 1회성일 수도 있어 숫자를 넣으면 제한된다",
+    "trigger": "active_night",
+    "_trigger_status": "interpretation (Q12a) — 밤에 능동 사용. 사망 시 자동 폭발이 아니다"
   },
 
   "day_vote": {
@@ -41,6 +56,28 @@
     "_damage_to_disguise_origin_status": "confirmed (Q1) — 피해는 흉내낸 원본 시민에게, 마피아 본인은 무피해",
     "disguised_nominee_survives": true,
     "_disguised_nominee_survives_status": "interpretation — 흡수한 마피아는 죽지 않고 생존"
+  },
+
+  "police": {
+    "phase": "night",
+    "_phase_status": "interpretation (Q21) — 검사 시점이 밤이면 변신과 얽히지 않는다",
+    "result": "is_mafia",
+    "_result_status": "interpretation (Q22) — '마피아팀인가 아닌가' 두 갈래. 'exact_role' 이면 훨씬 강해진다",
+    "allow_self": false,
+    "_allow_self_status": "interpretation — 자기 정체는 이미 알므로 무의미",
+    "allow_repeat_target": true,
+    "_allow_repeat_target_status": "interpretation — 같은 사람 반복 검사 허용. false 는 아직 구현하지 않았다(기록이 필요)"
+  },
+
+  "doctor": {
+    "phase": "night",
+    "_phase_status": "interpretation",
+    "effect": "prevent_night_kill",
+    "_effect_status": "interpretation (Q23) — '살림'을 부활이 아니라 보호로 읽었다",
+    "allow_self": true,
+    "_allow_self_status": "interpretation — 자기 자신도 지킬 수 있다",
+    "allow_repeat_target": true,
+    "_allow_repeat_target_status": "interpretation — 같은 사람 연속 보호 허용. false 는 아직 구현하지 않았다(기록이 필요)"
   },
 
   "disguise": {

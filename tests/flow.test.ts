@@ -28,7 +28,7 @@ test('Night → Dawn → Morning → Day → Trial → Dusk → 다음 Night 로
     'night',
   )
 
-  state = resolveNight(state, RULES, 'c4')
+  state = resolveNight(state, RULES, { kill: { actorId: 'm1', targetId: 'c4' } })
   assert.equal(state.phase, 'dawn')
   assert.equal(isAlive(state, 'c4'), false, '밤 살해는 즉사')
 
@@ -99,7 +99,7 @@ test('승부가 난 뒤에는 페이즈를 더 진행하지 않는다', () => {
   const ended = stateOf([character('m1', 'mafia'), character('c1', 'citizen', { alive: false })], 'ended', {
     winner: 'mafia',
   })
-  assert.throws(() => resolveNight(ended, RULES, 'c1'), /night 페이즈/)
+  assert.throws(() => resolveNight(ended, RULES, { kill: null }), /night 페이즈/)
   assert.throws(() => resolveDusk(ended, RULES), /dusk 페이즈/)
 })
 
@@ -118,7 +118,9 @@ test('여러 턴을 굴려도 게임이 끝난다 — 무한 루프로 남지 �
   // 마피아가 매 밤 한 명씩 죽이고 낮에는 아무도 지목되지 않는 최악의 시민 플레이.
   for (let guard = 0; guard < 10 && state.winner === null; guard += 1) {
     const prey = state.characters.find((c) => c.alive && c.faction === 'citizen')
-    state = resolveNight(state, RULES, prey?.id ?? null)
+    state = resolveNight(state, RULES, {
+      kill: prey ? { actorId: 'm1', targetId: prey.id } : null,
+    })
     if (state.winner !== null) break
     state = resolveDawn(state)
     state = resolveMorning(state, RULES, [], rng)

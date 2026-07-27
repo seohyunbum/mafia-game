@@ -8,7 +8,17 @@
  * RulesConfig 값으로 내려와 있어서, 답이 오면 data/rules.json 만 고치면 된다.
  */
 
-import type { Character, DeathCause, Faction, GameState, Phase, Rng, Verdict } from './types.ts'
+import type {
+  Character,
+  DeathCause,
+  Faction,
+  GameState,
+  NightActions,
+  NightKillAction,
+  Phase,
+  Rng,
+  Verdict,
+} from './types.ts'
 import { RuleError } from './types.ts'
 import type { LethalMode, RulesConfig } from './config.ts'
 
@@ -22,6 +32,7 @@ function clone(state: GameState): GameState {
     characters: state.characters.map((c) => ({ ...c })),
     nominationVotes: { ...state.nominationVotes },
     verdictVotes: { ...state.verdictVotes },
+    bombUses: { ...state.bombUses },
     log: [...state.log],
   }
 }
@@ -107,31 +118,179 @@ function pick<T>(items: readonly T[], rng: Rng): T {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Night — 마피아 살해 (✅ 즉사, Q2)
+// Night — 검사(경찰) → 보호(의사) → 살해(마피아팀). 셋을 한꺼번에 해소한다 (§6)
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** 경찰 검사. 살해를 적용하기 **전** 상태를 본다 🟡 — 그 밤에 죽는 사람도 결과는 나온다. */
+function resolveInvestigations(next: GameState, rules: RulesConfig, actions: NightActions): void {
+  const seen = new Set<string>()
+  for (const { policeId, targetId } of actions.investigations ?? []) {
+    const police = find(next, policeId)
+    if (police.roleId !== 'police') throw new RuleError(`검사는 경찰의 능력이다: ${policeId}`)
+    if (!police.alive) throw new RuleError(`죽은 경찰은 검사할 수 없다: ${policeId}`)
+    if (seen.has(policeId)) throw new RuleError(`한 밤에 두 번 검사할 수 없다: ${policeId}`)
+    seen.add(policeId)
+
+    if (!rules.police.allowSelf && policeId === targetId) {
+      throw new RuleError(`자기 자신은 검사하지 않는다: ${policeId}`)
+    }
+    const target = find(next, targetId)
+    if (!target.alive) throw new RuleError(`죽은 캐릭터는 검사할 수 없다: ${targetId}`)
+
+    // 'is_mafia' — 마피아팀인지 아닌지만 알려준다 (🟡 Q22).
+    // 교주팀은 미설계라 지금은 'not_mafia' 로 나온다 (Q11 답이 오면 재검토).
+    next.log.push({
+      kind: 'investigated',
+      policeId,
+      targetId,
+      result: target.faction === 'mafia' ? 'mafia' : 'not_mafia',
+    })
+  }
+}
+
+/** 의사 보호. 지켜진 사람은 그 밤 피해를 아예 받지 않는다 (즉사도 부수 피해도). */
+function resolveProtections(next: GameState, rules: RulesConfig, actions: NightActions): Set<string> {
+  const protectedIds = new Set<string>()
+  const seen = new Set<string>()
+  for (const { doctorId, targetId } of actions.protects ?? []) {
+    const doctor = find(next, doctorId)
+    if (doctor.roleId !== 'doctor') throw new RuleError(`보호는 의사의 능력이다: ${doctorId}`)
+    if (!doctor.alive) throw new RuleError(`죽은 의사는 보호할 수 없다: ${doctorId}`)
+    if (seen.has(doctorId)) throw new RuleError(`한 밤에 두 번 보호할 수 없다: ${doctorId}`)
+    seen.add(doctorId)
+
+    if (!rules.doctor.allowSelf && doctorId === targetId) {
+      throw new RuleError(`자기 자신은 보호할 수 없다: ${doctorId}`)
+    }
+    const target = find(next, targetId)
+    if (!target.alive) throw new RuleError(`죽은 캐릭터는 보호할 수 없다: ${targetId}`)
+
+    protectedIds.add(targetId)
+    next.log.push({ kind: 'protected', doctorId, targetId })
+  }
+  return protectedIds
+}
+
+/** 폭탄마 후보 명단 검증 — 규칙 위반은 밤이 해소되기 전에 잡는다. */
+function validateBombCandidates(
+  next: GameState,
+  rules: RulesConfig,
+  bomber: Character,
+  action: NightKillAction,
+): readonly string[] {
+  const candidates = action.candidates ?? []
+  if (new Set(candidates).size !== candidates.length) {
+    throw new RuleError('후보에 같은 사람을 두 번 넣을 수 없다')
+  }
+  if (!candidates.includes(action.targetId)) {
+    throw new RuleError('찍은 대상은 후보 안에 있어야 한다')
+  }
+
+  for (const id of candidates) {
+    const candidate = find(next, id)
+    if (!candidate.alive) throw new RuleError(`죽은 캐릭터는 후보가 될 수 없다: ${id}`)
+    if (!rules.bomber.canTargetOwnFaction && candidate.faction === bomber.faction) {
+      throw new RuleError(`후보에 같은 팀을 넣지 않는다: ${id}`)
+    }
+  }
+
+  // 후보를 다 채울 만큼 대상이 남아 있는지 — 막판에 밤이 막히면 안 된다 (🟡).
+  const eligible = next.characters.filter(
+    (c) => c.alive && (rules.bomber.canTargetOwnFaction || c.faction !== bomber.faction),
+  ).length
+  const required = Math.min(rules.bomber.candidateCount, eligible)
+  if (candidates.length !== required) {
+    if (!rules.bomber.allowFewerCandidatesWhenShort && candidates.length !== rules.bomber.candidateCount) {
+      throw new RuleError(`후보는 정확히 ${rules.bomber.candidateCount}명이어야 한다`)
+    }
+    throw new RuleError(`후보는 ${required}명이어야 한다 (남은 대상 ${eligible}명)`)
+  }
+  return candidates
+}
+
+/** 그 밤 마피아팀의 살해 1회. 수행자가 폭탄마면 폭발 형태가 된다 (§5.2). */
+function resolveKill(
+  next: GameState,
+  rules: RulesConfig,
+  action: NightKillAction,
+  protectedIds: ReadonlySet<string>,
+): void {
+  const actor = find(next, action.actorId)
+  if (!actor.alive) throw new RuleError(`죽은 캐릭터는 살해할 수 없다: ${action.actorId}`)
+  if (actor.faction !== 'mafia') throw new RuleError(`밤 살해는 마피아팀의 행동이다: ${action.actorId}`)
+
+  const target = find(next, action.targetId)
+  if (!target.alive) throw new RuleError(`이미 죽은 캐릭터를 살해할 수 없다: ${action.targetId}`)
+  if (target.faction === 'mafia' && !(actor.roleId === 'bomber' && rules.bomber.canTargetOwnFaction)) {
+    throw new RuleError(`마피아는 같은 팀을 살해하지 않는다: ${action.targetId}`)
+  }
+
+  if (actor.roleId !== 'bomber') {
+    if (action.candidates !== undefined) {
+      throw new RuleError('후보 명단은 폭탄마만 낸다 — 일반 마피아는 한 명을 지목한다')
+    }
+    next.nightKillTarget = protectedIds.has(target.id) ? null : target.id
+    next.log.push({ kind: 'night_kill', actorId: actor.id, targetId: target.id })
+    if (protectedIds.has(target.id)) {
+      next.log.push({ kind: 'kill_blocked', targetId: target.id })
+      return
+    }
+    applyLethal(next, target, rules.nightKill.lethality, 'night_kill')
+    return
+  }
+
+  // ── 폭탄마 (§5.2) ──
+  const used = next.bombUses[actor.id] ?? 0
+  if (rules.bomber.usesPerGame !== null && used >= rules.bomber.usesPerGame) {
+    throw new RuleError(`폭탄을 더 쓸 수 없다 (${rules.bomber.usesPerGame}회 제한): ${actor.id}`)
+  }
+  const candidates = validateBombCandidates(next, rules, actor, action)
+  next.bombUses[actor.id] = used + 1
+
+  next.nightKillTarget = protectedIds.has(target.id) ? null : target.id
+  next.log.push({ kind: 'bomb', bomberId: actor.id, targetId: target.id, candidates: [...candidates] })
+
+  // 찍힌 1명 → 즉사. 나머지 후보 → HP -1. 지켜진 사람은 어느 쪽도 받지 않는다.
+  if (protectedIds.has(target.id)) {
+    next.log.push({ kind: 'kill_blocked', targetId: target.id })
+  } else {
+    applyLethal(next, target, rules.nightKill.lethality, 'night_kill')
+  }
+
+  for (const id of candidates) {
+    if (id === target.id) continue
+    if (protectedIds.has(id)) {
+      next.log.push({ kind: 'kill_blocked', targetId: id })
+      continue
+    }
+    const splashed = find(next, id)
+    const damage = rules.bomber.collateralDamage
+    next.log.push({ kind: 'collateral', characterId: id, damage })
+    splashed.hp -= damage
+    if (splashed.hp <= 0) kill(next, splashed, 'collateral')
+  }
+}
+
 /**
- * 밤 살해를 적용하고 Dawn 으로 넘어간다.
- * `targetId === null` 은 살해를 거른 밤 (🟡 Q19 — `night_kill.may_skip`).
+ * 밤 행동을 모두 해소하고 Dawn 으로 넘어간다.
+ * `actions.kill === null` 은 살해를 거른 밤 (🟡 Q19 — `night_kill.may_skip`).
  */
-export function resolveNight(state: GameState, rules: RulesConfig, targetId: string | null): GameState {
+export function resolveNight(state: GameState, rules: RulesConfig, actions: NightActions): GameState {
   requirePhase(state, 'night')
   const next = clone(state)
   next.nominationVotes = {}
   next.verdictVotes = {}
   next.nominee = null
+  next.nightKillTarget = null
 
-  if (targetId === null) {
+  resolveInvestigations(next, rules, actions)
+  const protectedIds = resolveProtections(next, rules, actions)
+
+  if (actions.kill === null) {
     if (!rules.nightKill.maySkip) throw new RuleError('이 규칙에서는 밤 살해를 거를 수 없다')
-    next.nightKillTarget = null
     next.log.push({ kind: 'night_skipped' })
   } else {
-    const target = find(next, targetId)
-    if (!target.alive) throw new RuleError(`이미 죽은 캐릭터를 살해할 수 없다: ${targetId}`)
-    if (target.faction === 'mafia') throw new RuleError(`마피아는 같은 팀을 살해하지 않는다: ${targetId}`)
-    next.nightKillTarget = targetId
-    next.log.push({ kind: 'night_kill', targetId })
-    applyLethal(next, target, rules.nightKill.lethality, 'night_kill')
+    resolveKill(next, rules, actions.kill, protectedIds)
   }
 
   next.phase = 'dawn'

@@ -7,7 +7,7 @@
  * `_*_status` 주석 키들은 사람이 읽는 메타데이터라 파서가 무시한다.
  */
 
-export const RULES_SCHEMA_VERSION = 2
+export const RULES_SCHEMA_VERSION = 3
 
 /** 밤 살해 판정 (DESIGN.md Q2 = instant / Q17 이 뒤집히면 damage) */
 export type LethalMode = { readonly kind: 'instant' } | { readonly kind: 'damage'; readonly amount: number }
@@ -17,6 +17,15 @@ export interface RulesConfig {
   readonly nightKill: {
     readonly lethality: LethalMode
     readonly maySkip: boolean
+  }
+  readonly bomber: {
+    readonly candidateCount: number
+    readonly collateralDamage: number
+    /** 후보로 세울 생존자가 모자라면 있는 만큼만 고르게 할지 */
+    readonly allowFewerCandidatesWhenShort: boolean
+    readonly canTargetOwnFaction: boolean
+    /** null = 횟수 제한 없음 (Q12b) */
+    readonly usesPerGame: number | null
   }
   readonly nomination: {
     /** 동표일 때: 아무도 세우지 않거나, 동표 중 무작위 1명 */
@@ -34,6 +43,16 @@ export interface RulesConfig {
     readonly damageToDisguiseOrigin: number
     /** 처형이 변신에 흡수됐을 때 마피아 본인이 살아남는가 */
     readonly disguisedNomineeSurvives: boolean
+  }
+  readonly police: {
+    /** 'is_mafia' = 마피아팀 여부만. 정확한 직업까지 보는 규칙은 아직 구현하지 않았다 (Q22) */
+    readonly result: 'is_mafia'
+    readonly allowSelf: boolean
+  }
+  readonly doctor: {
+    /** 'prevent_night_kill' = 그 밤의 살해를 막는다. 부활 규칙은 구현하지 않았다 (Q23) */
+    readonly effect: 'prevent_night_kill'
+    readonly allowSelf: boolean
   }
   readonly disguise: {
     readonly targetPool: 'alive_citizens' | 'all_citizens'
@@ -103,6 +122,17 @@ function lethality(source: Json, path: string, instant: boolean, damageKey: stri
   return { kind: 'damage', amount: posInt(source, path, damageKey) }
 }
 
+/**
+ * 아직 구현하지 않은 규칙 변형을 데이터로 켜는 걸 막는다.
+ * 조용히 무시하면 "데이터는 바꿨는데 게임은 그대로"인 최악의 무음 실패가 된다.
+ */
+function requireTrue(source: Json, path: string, key: string): void {
+  if (bool(source, path, key)) return
+  throw new ConfigError(
+    `${path}.${key}=false 는 아직 구현하지 않았다 — 지난 밤 지목 기록을 상태에 넣어야 한다`,
+  )
+}
+
 /** 승리 조건 문자열 → 판정 여부. null = 미설계 진영이라 판정하지 않는다. */
 function victoryFlag(source: Json, key: string): boolean {
   const value = source[key]
@@ -131,6 +161,18 @@ export function parseRules(raw: unknown): RulesConfig {
   const nomination = obj(dayVote, 'nomination')
   const verdict = obj(dayVote, 'verdict')
   const disguise = obj(root, 'disguise')
+  const bomber = obj(root, 'bomber')
+  const police = obj(root, 'police')
+  const doctor = obj(root, 'doctor')
+
+  // 사망 시 자동 폭발은 구현하지 않았다 (Q12a).
+  enumOf(bomber, 'bomber', 'trigger', ['active_night'] as const)
+
+  // 밤 이외의 시점은 구현하지 않았다 — 낮 검사는 변신과 얽혀서 규칙이 따로 필요하다 (Q21).
+  enumOf(police, 'police', 'phase', ['night'] as const)
+  enumOf(doctor, 'doctor', 'phase', ['night'] as const)
+  requireTrue(police, 'police', 'allow_repeat_target')
+  requireTrue(doctor, 'doctor', 'allow_repeat_target')
 
   const resolution = enumOf(dayVote, 'day_vote', 'resolution', ['nominate_then_trial'] as const)
   // 지금 코어는 Q3 이 확정한 2단계 낮만 구현한다. 다른 값이 오면 위 enumOf 가 이미 던진다.
@@ -155,6 +197,21 @@ export function parseRules(raw: unknown): RulesConfig {
       executionResult: lethality(dayVote, 'day_vote', executionResult === 'death', 'execution_damage'),
       damageToDisguiseOrigin: posInt(dayVote, 'day_vote', 'damage_to_disguise_origin'),
       disguisedNomineeSurvives: bool(dayVote, 'day_vote', 'disguised_nominee_survives'),
+    },
+    bomber: {
+      candidateCount: posInt(bomber, 'bomber', 'candidate_count'),
+      collateralDamage: posInt(bomber, 'bomber', 'collateral_damage'),
+      allowFewerCandidatesWhenShort: bool(bomber, 'bomber', 'allow_fewer_candidates_when_short'),
+      canTargetOwnFaction: bool(bomber, 'bomber', 'can_target_own_faction'),
+      usesPerGame: bomber['uses_per_game'] === null ? null : posInt(bomber, 'bomber', 'uses_per_game'),
+    },
+    police: {
+      result: enumOf(police, 'police', 'result', ['is_mafia'] as const),
+      allowSelf: bool(police, 'police', 'allow_self'),
+    },
+    doctor: {
+      effect: enumOf(doctor, 'doctor', 'effect', ['prevent_night_kill'] as const),
+      allowSelf: bool(doctor, 'doctor', 'allow_self'),
     },
     disguise: {
       targetPool: enumOf(disguise, 'disguise', 'target_pool', ['alive_citizens', 'all_citizens'] as const),

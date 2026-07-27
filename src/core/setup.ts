@@ -12,6 +12,8 @@ import type { RulesConfig } from './config.ts'
 /** 역할 → 진영. data/roles.json 의 faction 과 일치해야 한다. */
 const ROLE_FACTION: Readonly<Record<RoleId, Faction>> = {
   citizen: 'citizen',
+  police: 'citizen',
+  doctor: 'citizen',
   mafia: 'mafia',
   bomber: 'mafia',
 }
@@ -140,6 +142,7 @@ export function createGame(options: SetupOptions, rules: RulesConfig, rng: Rng):
     phase: rules.turn.firstPhase,
     characters,
     nightKillTarget: null,
+    bombUses: {},
     nominationVotes: {},
     nominee: null,
     verdictVotes: {},
