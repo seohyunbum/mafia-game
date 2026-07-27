@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "_comment": "전역 규칙 수치 초안. 확정되지 않은 값은 null 로 둔다 (임의값 금지). 정본 설명은 docs/DESIGN.md",
+
+  "character": {
+    "start_hp": 2,
+    "_start_hp_status": "confirmed"
+  },
+
+  "night_kill": {
+    "damage": null,
+    "_damage_status": "undecided (DESIGN.md Q2) — 즉사인지 HP-1인지 확정 대기",
+    "instant_death": null
+  },
+
+  "day_vote": {
+    "resolution": null,
+    "_resolution_status": "undecided (DESIGN.md Q3) — 최다득표 처형/HP-1 여부 확정 대기",
+    "damage_to_disguise_origin": 1,
+    "_damage_to_disguise_origin_status": "confirmed (피해 대상이 원본 시민인지는 Q1 확인 대기)"
+  },
+
+  "disguise": {
+    "target_selection": "random",
+    "_target_selection_status": "confirmed — 마피아가 고르지 않고 무작위",
+    "duration_days": null,
+    "_duration_days_status": "undecided (DESIGN.md Q5)",
+    "visible_to_others": null,
+    "_visible_to_others_status": "undecided (DESIGN.md Q4)",
+    "allow_dead_target": null,
+    "allow_duplicate_target": null
+  },
+
+  "setup": {
+    "total_characters": null,
+    "faction_counts": null,
+    "_status": "undecided (DESIGN.md Q10)",
+    "assign_role_at_start": true,
+    "_assign_role_at_start_status": "confirmed — 시작 즉시 배정"
+  },
+
+  "modes": {
+    "solo": { "team_size": 1 },
+    "duo": {
+      "team_size": 2,
+      "same_faction": true,
+      "know_each_other": true,
+      "_status": "same_faction/know_each_other 는 해석 (DESIGN.md §2)"
+    }
+  }
+}

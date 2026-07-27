@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "_comment": "역할 정의 초안. 확정된 능력만 기록하고, 미정 역할은 abilities 를 null 로 둔다. 정본 설명은 docs/DESIGN.md §5",
+
+  "roles": [
+    {
+      "id": "citizen",
+      "name": "시민",
+      "faction": "citizen",
+      "start_hp": 2,
+      "abilities": null,
+      "status": "undecided — 일반 시민 외 특수 직업 존재 여부 미정 (DESIGN.md §5.3)"
+    },
+    {
+      "id": "mafia",
+      "name": "일반 마피아",
+      "faction": "mafia",
+      "start_hp": 2,
+      "abilities": [
+        {
+          "id": "night_kill",
+          "phase": "night",
+          "name": "살해",
+          "description": "밤이 되면 한 명을 지목해 죽인다.",
+          "status": "confirmed",
+          "damage": null,
+          "_damage_note": "즉사/HP-1 확정 대기 (DESIGN.md Q2)"
+        },
+        {
+          "id": "disguise",
+          "phase": "morning",
+          "name": "변신",
+          "description": "아침에 사용하면 랜덤한 시민 캐릭터로 변신한다. 변신 상태에서 지목당하면 원본 시민의 HP가 1 깎인다.",
+          "status": "confirmed",
+          "optional": true,
+          "target_selection": "random",
+          "vote_damage": 1,
+          "vote_damage_target": "disguise_origin",
+          "_vote_damage_target_note": "원본 시민 vs 마피아 본인 — 확정 대기 (DESIGN.md Q1)"
+        }
+      ]
+    },
+    {
+      "id": "bomber",
+      "name": "폭탄마",
+      "faction": "mafia",
+      "start_hp": 2,
+      "abilities": null,
+      "status": "undecided — 소속(마피아편)만 확정, 능력 상세 후속 설계 대기 (DESIGN.md Q12)"
+    }
+  ],
+
+  "factions": [
+    {
+      "id": "citizen",
+      "name": "시민팀",
+      "win_condition": null,
+      "status": "undecided"
+    },
+    {
+      "id": "mafia",
+      "name": "마피아팀",
+      "win_condition": "시민팀과 교주팀 전원 사망",
+      "status": "confirmed"
+    },
+    {
+      "id": "cult",
+      "name": "교주팀",
+      "win_condition": null,
+      "status": "undecided — 이름과 '마피아의 제거 대상'만 확정 (DESIGN.md Q11)"
+    }
+  ]
+}
