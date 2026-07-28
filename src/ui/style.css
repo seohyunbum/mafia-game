@@ -1,0 +1,643 @@
+/*
+ * 아트 디렉션 — 1930년대 인쇄물 / 수배전단 느와르
+ *
+ * 다른 저장소(blaster·wave-arena)와 의도적으로 정반대로 간다:
+ *   저쪽 = 둥근 카드 · 산세리프 · 네온/파스텔 · 광택 · 3D
+ *   여기 = 모서리 0 · 명조 세리프 · 종이와 잉크 · 활판 오프셋 · 완전 평면
+ *
+ * 외부 리소스를 쓰지 않는다 — 폰트는 시스템, 질감은 전부 CSS 그라디언트,
+ * 인물은 절차적 SVG(portrait.ts). 오프라인에서도 그대로 나온다.
+ */
+
+:root {
+  /* 종이와 잉크 */
+  --paper: #e6dfd0;
+  --paper-2: #ded5c3;
+  --paper-dark: #cdc2ab;
+  --ink: #16130f;
+  --ink-soft: #4a4238;
+  --ink-faint: #8b8271;
+
+  /* 단 하나의 색 — 피 */
+  --blood: #8e1b12;
+  --blood-soft: #b6493c;
+
+  /* 밤에는 종이 위에 암실등이 켜진다 */
+  --night-veil: rgba(14, 12, 20, 0.82);
+  --night-glow: rgba(142, 27, 18, 0.35);
+
+  --rule: 2px solid var(--ink);
+  --rule-thin: 1px solid var(--ink-faint);
+
+  --serif: 'Batang', 'AppleMyungjo', 'Nanum Myeongjo', 'Songti SC', Georgia,
+    'Times New Roman', serif;
+  --stencil: 'Haettenschweiler', 'Arial Narrow Bold', 'Impact', var(--serif);
+
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--paper-dark);
+  color: var(--ink);
+  font-family: var(--serif);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── 종이 질감 ────────────────────────────────────────────────────────────
+   이미지 없이 종이를 만든다: 두 겹의 사선 그라디언트로 섬유,
+   방사형으로 인쇄 얼룩. */
+.paper {
+  background-color: var(--paper);
+  background-image: repeating-linear-gradient(
+      54deg,
+      rgba(22, 19, 15, 0.035) 0 1px,
+      transparent 1px 4px
+    ),
+    repeating-linear-gradient(-38deg, rgba(22, 19, 15, 0.028) 0 1px, transparent 1px 6px),
+    radial-gradient(120% 80% at 12% 8%, rgba(22, 19, 15, 0.07), transparent 60%),
+    radial-gradient(90% 70% at 88% 96%, rgba(142, 27, 18, 0.05), transparent 55%);
+}
+
+/* 활판 오프셋 — 잉크가 살짝 밀린 인쇄. 제목에만 쓴다. */
+.offset {
+  text-shadow: 1.5px 1.5px 0 rgba(142, 27, 18, 0.28);
+}
+
+#app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: clamp(12px, 3vw, 36px);
+  gap: 22px;
+}
+
+.sheet {
+  width: min(1080px, 100%);
+  /* 종이가 화면을 채우게 — 아래가 비면 인쇄물이 아니라 미완성 페이지로 보인다 */
+  min-height: calc(100vh - clamp(24px, 6vw, 72px));
+  border: var(--rule);
+  outline: 6px solid var(--paper-dark);
+  outline-offset: 0;
+  padding: clamp(16px, 2.6vw, 34px);
+  position: relative;
+}
+
+/* 종이 위쪽에 박힌 핀 두 개 */
+.sheet::before,
+.sheet::after {
+  content: '';
+  position: absolute;
+  top: -7px;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #6b6255, #221d16 70%);
+  box-shadow: 0 2px 0 rgba(22, 19, 15, 0.35);
+}
+.sheet::before {
+  left: 12%;
+}
+.sheet::after {
+  right: 12%;
+}
+
+/* ── 제목 조판 ───────────────────────────────────────────────────────────── */
+.masthead {
+  border-bottom: 5px double var(--ink);
+  padding-bottom: 10px;
+  margin-bottom: 18px;
+  text-align: center;
+}
+
+.masthead h1 {
+  margin: 0;
+  font-family: var(--stencil);
+  font-size: clamp(30px, 6.4vw, 62px);
+  letter-spacing: 0.16em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.masthead .sub {
+  margin-top: 8px;
+  font-size: 12px;
+  letter-spacing: 0.42em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.slug {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 11px;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  border-top: var(--rule-thin);
+  border-bottom: var(--rule-thin);
+  padding: 6px 2px;
+  margin-bottom: 18px;
+}
+
+h2.headline {
+  font-family: var(--stencil);
+  font-size: clamp(24px, 4.6vw, 46px);
+  letter-spacing: 0.06em;
+  line-height: 1.05;
+  margin: 0 0 6px;
+  text-transform: uppercase;
+}
+
+.deck {
+  font-size: clamp(14px, 1.6vw, 18px);
+  color: var(--ink-soft);
+  margin: 0 0 20px;
+  font-style: italic;
+}
+
+/* ── 호출 카드 (밤) ─────────────────────────────────────────────────────── */
+.call {
+  border: 4px solid var(--ink);
+  padding: 18px 20px 20px;
+  margin-bottom: 20px;
+  background:
+    repeating-linear-gradient(90deg, rgba(22, 19, 15, 0.05) 0 2px, transparent 2px 9px),
+    var(--paper-2);
+}
+
+.call .call-prompt {
+  font-family: var(--stencil);
+  font-size: clamp(22px, 4vw, 40px);
+  letter-spacing: 0.1em;
+  margin: 0;
+}
+
+.call .call-note {
+  margin: 8px 0 0;
+  font-size: 13px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--blood);
+}
+
+.call-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+/* ── 시계 — 잉크로 그린 눈금 ─────────────────────────────────────────────── */
+.clock {
+  flex: 0 0 auto;
+  width: 116px;
+  height: 116px;
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+
+.clock svg {
+  position: absolute;
+  inset: 0;
+  transform: rotate(-90deg);
+}
+
+.clock .face {
+  fill: none;
+  stroke: rgba(22, 19, 15, 0.18);
+  stroke-width: 7;
+}
+
+.clock .hand {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 7;
+  stroke-linecap: butt;
+  transition: stroke-dashoffset 1s linear;
+}
+
+.clock.urgent .hand {
+  stroke: var(--blood);
+}
+
+.clock .readout {
+  position: relative;
+  font-family: var(--stencil);
+  font-size: 30px;
+  letter-spacing: 0.04em;
+}
+
+.clock.urgent .readout {
+  color: var(--blood);
+}
+
+/* ── 인물 카드 — 수배전단 ────────────────────────────────────────────────── */
+.roster {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 14px;
+}
+
+.card {
+  border: var(--rule);
+  padding: 8px 8px 10px;
+  background: var(--paper-2);
+  text-align: center;
+  position: relative;
+  cursor: pointer;
+  /* 붙여놓은 종이처럼 아주 살짝 기울인다 — 카드마다 다르게 */
+  transform: rotate(var(--tilt, 0deg));
+  transition: transform 120ms ease, background 120ms ease;
+}
+
+.card:hover:not(.dead):not([disabled]) {
+  transform: rotate(0deg) translateY(-3px);
+  background: var(--paper);
+}
+
+.card[disabled],
+.card.dead {
+  cursor: default;
+}
+
+.card .portrait {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  display: block;
+  border-bottom: var(--rule-thin);
+  margin-bottom: 6px;
+}
+
+.card .name {
+  font-size: 15px;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+}
+
+.card .tag {
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-top: 2px;
+}
+
+/* 상처 = HP. 잉크로 그은 사선 두 개가 칸을 채운다. */
+.wounds {
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.wounds i {
+  width: 16px;
+  height: 6px;
+  border: 1px solid var(--ink);
+  background: transparent;
+}
+
+.wounds i.gone {
+  background: repeating-linear-gradient(
+    45deg,
+    var(--blood) 0 2px,
+    transparent 2px 4px
+  );
+  border-color: var(--blood);
+}
+
+/* 선택됨 — 붉은 원으로 동그라미 친다 */
+.card.picked {
+  background: var(--paper);
+  box-shadow: inset 0 0 0 3px var(--blood);
+}
+
+.card.picked::after {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border: 3px solid var(--blood);
+  border-radius: 48% 52% 47% 53% / 52% 47% 53% 48%;
+  opacity: 0.8;
+  pointer-events: none;
+}
+
+/* 사망 — 도장 */
+.card.dead {
+  filter: grayscale(1) contrast(0.82);
+  opacity: 0.62;
+}
+
+.card.dead::before {
+  content: attr(data-stamp);
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-family: var(--stencil);
+  font-size: clamp(18px, 2.6vw, 26px);
+  letter-spacing: 0.12em;
+  color: var(--blood);
+  border: 4px solid var(--blood);
+  transform: rotate(-11deg) scale(0.92);
+  opacity: 0.85;
+  pointer-events: none;
+}
+
+/* ── 버튼 — 잉크 블록 ───────────────────────────────────────────────────── */
+button {
+  font-family: var(--stencil);
+  font-size: 15px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  padding: 11px 20px;
+  border: var(--rule);
+  background: var(--paper-2);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+button.primary {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+button.primary:hover:not(:disabled) {
+  background: var(--blood);
+  border-color: var(--blood);
+}
+
+button.danger {
+  background: var(--blood);
+  border-color: var(--blood);
+  color: var(--paper);
+}
+
+button.danger:hover:not(:disabled) {
+  background: var(--ink);
+  border-color: var(--ink);
+}
+
+.actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 22px;
+  padding-top: 16px;
+  border-top: 5px double var(--ink);
+}
+
+.actions .spacer {
+  flex: 1 1 auto;
+}
+
+/* ── 밤 ──────────────────────────────────────────────────────────────────
+   밤에는 종이가 어두워지고 붉은 암실등이 켜진다. 색을 반전하지 않고
+   덮는다 — 인쇄물이라는 느낌을 유지하려고. */
+body.is-night {
+  background: #0b0910;
+}
+
+body.is-night .paper {
+  background-color: #2a2530;
+  background-image: repeating-linear-gradient(
+      54deg,
+      rgba(0, 0, 0, 0.22) 0 1px,
+      transparent 1px 4px
+    ),
+    radial-gradient(120% 90% at 50% 0%, var(--night-glow), transparent 62%);
+  color: #d8cfc0;
+}
+
+body.is-night {
+  --ink: #d8cfc0;
+  --ink-soft: #a2988a;
+  --ink-faint: #74695c;
+  --paper: #322c39;
+  --paper-2: #2a2530;
+  --paper-dark: #16121c;
+  /* 밤에는 어두운 종이 위라 진한 피색이 읽히지 않는다 — 밝은 쪽으로 올린다 */
+  --blood: #e2685a;
+  --blood-soft: #f0968a;
+}
+
+/* ── 신문 1면 (새벽 결과) ────────────────────────────────────────────────── */
+.frontpage {
+  columns: 2;
+  column-gap: 26px;
+  column-rule: var(--rule-thin);
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+@media (max-width: 720px) {
+  .frontpage {
+    columns: 1;
+  }
+}
+
+.frontpage p {
+  margin: 0 0 12px;
+  text-indent: 1.2em;
+}
+
+.frontpage p:first-of-type {
+  text-indent: 0;
+}
+
+/* 드롭캡(::first-letter)은 쓰지 않는다 — 한글에서는 이름의 첫 글자를 뜯어내
+   "서 기자" 가 "기자" 로 읽히는 사고가 난다. 대신 첫 문단을 굵게 세운다. */
+.frontpage p:first-of-type {
+  font-size: 1.14em;
+  border-left: 4px solid var(--blood);
+  padding-left: 12px;
+}
+
+.frontpage .quiet {
+  color: var(--ink-soft);
+  font-style: italic;
+}
+
+/* ── 표·명부 ─────────────────────────────────────────────────────────────── */
+.ledger {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.ledger th,
+.ledger td {
+  border-bottom: var(--rule-thin);
+  padding: 8px 6px;
+  text-align: left;
+}
+
+.ledger th {
+  font-size: 10px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  border-bottom: var(--rule);
+}
+
+.ledger select {
+  font-family: var(--serif);
+  font-size: 14px;
+  padding: 4px 6px;
+  border: var(--rule-thin);
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.ledger .verdict-pick {
+  display: flex;
+  gap: 6px;
+}
+
+.ledger .verdict-pick button {
+  font-size: 11px;
+  padding: 5px 10px;
+  letter-spacing: 0.1em;
+}
+
+/* ── 도장 (승리·판결) ───────────────────────────────────────────────────── */
+.stamp {
+  display: inline-block;
+  font-family: var(--stencil);
+  font-size: clamp(26px, 5vw, 52px);
+  letter-spacing: 0.14em;
+  color: var(--blood);
+  border: 6px solid var(--blood);
+  padding: 10px 26px;
+  transform: rotate(-7deg);
+  margin: 18px 0;
+}
+
+/* ── 저격 버튼 — 언제나 떠 있다 (§5.5 페이즈 무관) ───────────────────────── */
+.snipe-dock {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 20;
+}
+
+/* 밤낮 토큰을 쓰지 않는다 — 이 버튼은 sheet 밖에 항상 떠 있어서 밤에 색이 뒤집히면
+   어두운 글자 + 밝은 빨강이 되어 읽히지 않는다. 값을 고정한다. */
+.snipe-dock button {
+  background: #8e1b12;
+  border-color: #16130f;
+  color: #f1ebdd;
+  box-shadow: 4px 4px 0 #16130f;
+}
+
+.snipe-dock button:hover:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: 2px 2px 0 #16130f;
+  background: #16130f;
+  border-color: #8e1b12;
+  color: #f1ebdd;
+}
+
+/* ── 설정 화면 ───────────────────────────────────────────────────────────── */
+.setup-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 16px;
+  margin-bottom: 8px;
+}
+
+.field {
+  border: var(--rule-thin);
+  padding: 12px;
+}
+
+.field label {
+  display: block;
+  font-size: 10px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  margin-bottom: 8px;
+}
+
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.stepper .value {
+  font-family: var(--stencil);
+  font-size: 28px;
+  min-width: 2ch;
+  text-align: center;
+}
+
+.stepper button {
+  padding: 4px 12px;
+  font-size: 18px;
+}
+
+.tally {
+  font-size: 12px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  margin-top: 14px;
+}
+
+.warn {
+  border-left: 5px solid var(--blood);
+  padding: 8px 12px;
+  margin: 14px 0 0;
+  font-size: 14px;
+  color: var(--blood);
+  background: rgba(142, 27, 18, 0.07);
+}
+
+.log {
+  margin-top: 20px;
+  border-top: var(--rule);
+  padding-top: 12px;
+  font-size: 13px;
+  color: var(--ink-soft);
+  max-height: 190px;
+  overflow-y: auto;
+}
+
+.log b {
+  color: var(--ink);
+}
+
+.secret {
+  font-size: 12px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--blood);
+  border: var(--rule-thin);
+  border-color: var(--blood);
+  padding: 3px 8px;
+  display: inline-block;
+  margin-top: 8px;
+}
