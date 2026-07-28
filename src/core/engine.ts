@@ -32,7 +32,7 @@ function clone(state: GameState): GameState {
     characters: state.characters.map((c) => ({ ...c })),
     nominationVotes: { ...state.nominationVotes },
     verdictVotes: { ...state.verdictVotes },
-    bombUses: { ...state.bombUses },
+    abilityUses: { ...state.abilityUses },
     log: [...state.log],
   }
 }
@@ -75,7 +75,7 @@ function applyLethal(
   next: GameState,
   character: Character,
   mode: LethalMode,
-  cause: 'night_kill' | 'execution',
+  cause: 'night_kill' | 'execution' | 'snipe',
 ): void {
   if (mode.kind === 'instant') {
     kill(next, character, cause)
@@ -307,12 +307,12 @@ function resolveKill(
   }
 
   // ── 폭탄마 (§5.2) ──
-  const used = next.bombUses[actor.id] ?? 0
+  const used = next.abilityUses[actor.id] ?? 0
   if (rules.bomber.usesPerGame !== null && used >= rules.bomber.usesPerGame) {
     throw new RuleError(`폭탄을 더 쓸 수 없다 (${rules.bomber.usesPerGame}회 제한): ${actor.id}`)
   }
   const candidates = validateBombCandidates(next, rules, actor, action)
-  next.bombUses[actor.id] = used + 1
+  next.abilityUses[actor.id] = used + 1
 
   next.nightKillTarget = protectedIds.has(target.id) ? null : target.id
   next.log.push({ kind: 'bomb', bomberId: actor.id, targetId: target.id, candidates: [...candidates] })
@@ -362,6 +362,73 @@ export function resolveNight(state: GameState, rules: RulesConfig, actions: Nigh
   }
 
   next.phase = 'dawn'
+  checkVictory(next, rules)
+  return next
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 스나이퍼 — 페이즈 밖의 행동 (§5.5)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 스나이퍼가 지금 쏠 수 있는가.
+ *
+ * 다른 능력은 모두 특정 페이즈에 묶여 있지만 저격만 **어디서나** 가능하다 ✅.
+ * 그래서 페이즈 검사가 없고, 끝난 게임만 막는다.
+ */
+export function sniperCanFire(state: GameState, rules: RulesConfig, sniperId: string): boolean {
+  if (state.winner !== null || state.phase === 'ended') return false
+  const sniper = state.characters.find((c) => c.id === sniperId)
+  if (!sniper || !sniper.alive || sniper.roleId !== 'sniper') return false
+  const limit = rules.sniper.usesPerGame
+  return limit === null || (state.abilityUses[sniperId] ?? 0) < limit
+}
+
+/**
+ * 저격. **어느 페이즈에서든** 호출할 수 있고 (승부가 난 뒤만 제외),
+ * 그 자리에서 사망·승리 판정이 일어난다.
+ *
+ * 의사 보호는 무시한다 🟡 (Q31) — 보호는 밤 해소 안에서만 존재하는 상태이고,
+ * 저격은 페이즈 밖이라 보호가 걸려 있지 않은 시점에도 발생한다.
+ */
+export function fireSniper(
+  state: GameState,
+  rules: RulesConfig,
+  shot: { readonly sniperId: string; readonly targetId: string },
+): GameState {
+  if (state.winner !== null || state.phase === 'ended') {
+    throw new RuleError('승부가 난 뒤에는 쏠 수 없다')
+  }
+
+  const next = clone(state)
+  const sniper = find(next, shot.sniperId)
+  if (sniper.roleId !== 'sniper') throw new RuleError(`저격은 스나이퍼의 능력이다: ${sniper.id}`)
+  if (!sniper.alive) throw new RuleError(`죽은 스나이퍼는 쏠 수 없다: ${sniper.id}`)
+
+  const used = next.abilityUses[sniper.id] ?? 0
+  const limit = rules.sniper.usesPerGame
+  if (limit !== null && used >= limit) {
+    throw new RuleError(`저격을 더 쓸 수 없다 (${limit}회 제한): ${sniper.id}`)
+  }
+
+  const target = find(next, shot.targetId)
+  if (!target.alive) throw new RuleError(`이미 죽은 캐릭터를 쏠 수 없다: ${target.id}`)
+  if (target.id === sniper.id) throw new RuleError('자기 자신을 쏠 수 없다')
+  if (!rules.sniper.canTargetOwnFaction && target.faction === sniper.faction) {
+    throw new RuleError(`같은 팀은 쏘지 않는다: ${target.id}`)
+  }
+
+  next.abilityUses[sniper.id] = used + 1
+  next.log.push({ kind: 'sniped', sniperId: sniper.id, targetId: target.id, phase: next.phase })
+  applyLethal(next, target, rules.sniper.lethality, 'snipe')
+
+  // 변론 중인 피고를 쏴 죽였으면 재판이 성립하지 않는다.
+  // 여기서 Dusk 로 넘기지 않으면 Trial 에 피고가 없어 그 날이 갈 곳을 잃는다(소프트락).
+  if (next.nominee === target.id) {
+    next.nominee = null
+    if (next.phase === 'trial') next.phase = 'dusk'
+  }
+
   checkVictory(next, rules)
   return next
 }

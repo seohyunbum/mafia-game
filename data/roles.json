@@ -88,6 +88,23 @@
       ]
     },
     {
+      "id": "sniper",
+      "name": "스나이퍼",
+      "faction": "mafia",
+      "start_hp": 2,
+      "abilities": [
+        {
+          "id": "snipe",
+          "phase": "any",
+          "name": "저격",
+          "description": "밤이든 낮이든 어디서나 한 명을 죽인다. 페이즈에 묶이지 않는 유일한 능력이다.",
+          "status": "confirmed — 페이즈 무관 사살 확정. 사용 횟수는 해석 (DESIGN.md §5.5, Q29)",
+          "replaces_team_night_kill": false,
+          "_replaces_team_night_kill_note": "interpretation — 마피아팀 밤 살해와 별개다 (Q30)"
+        }
+      ]
+    },
+    {
       "id": "cultleader",
       "name": "교주",
       "faction": "cult",

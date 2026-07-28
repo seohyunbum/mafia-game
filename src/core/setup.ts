@@ -16,6 +16,7 @@ const ROLE_FACTION: Readonly<Record<RoleId, Faction>> = {
   doctor: 'citizen',
   mafia: 'mafia',
   bomber: 'mafia',
+  sniper: 'mafia',
   cultleader: 'cult',
 }
 
@@ -144,7 +145,7 @@ export function createGame(options: SetupOptions, rules: RulesConfig, rng: Rng):
     phase: rules.turn.firstPhase,
     characters,
     nightKillTarget: null,
-    bombUses: {},
+    abilityUses: {},
     nominationVotes: {},
     nominee: null,
     verdictVotes: {},

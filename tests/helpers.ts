@@ -29,7 +29,7 @@ export function stateOf(characters: Character[], phase: Phase, overrides: Partia
     phase,
     characters,
     nightKillTarget: null,
-    bombUses: {},
+    abilityUses: {},
     nominationVotes: {},
     nominee: null,
     verdictVotes: {},

@@ -58,6 +58,21 @@
     "_disguised_nominee_survives_status": "interpretation — 흡수한 마피아는 죽지 않고 생존"
   },
 
+  "sniper": {
+    "phase": "any",
+    "_phase_status": "confirmed — '밤이든 낮이든 어디서나'. 페이즈 해소에 묶이지 않는 독립 행동",
+    "instant_death": true,
+    "_instant_death_status": "interpretation — 밤 살해·처형과 동일하게 HP 무시",
+    "uses_per_game": 1,
+    "_uses_per_game_status": "interpretation (Q29) — '한 명을 죽일 수 있어'를 총 1발로 읽었다. 밤 살해와 별개라서 무제한이면 마피아팀이 압도적이다",
+    "replaces_team_night_kill": false,
+    "_replaces_team_night_kill_status": "interpretation (Q30) — 폭탄마와 달리 밤 살해를 대체하지 않는다",
+    "can_target_own_faction": false,
+    "_can_target_own_faction_status": "interpretation — 자기 팀은 쏘지 않는다. 그래서 변신과도 얽히지 않는다",
+    "ignores_protection": true,
+    "_ignores_protection_status": "interpretation (Q31) — 보호는 '그 밤의 살해' 규칙이고 저격은 페이즈 밖이라 보호 상태가 없는 시점에도 발생한다"
+  },
+
   "cult": {
     "active_nights": "even",
     "_active_nights_status": "confirmed — 교주는 짝수 밤에만 움직인다",

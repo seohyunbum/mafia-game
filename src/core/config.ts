@@ -59,6 +59,13 @@ export interface RulesConfig {
     readonly allowDuplicateTarget: boolean
     readonly expiresAtEndOfDay: boolean
   }
+  readonly sniper: {
+    readonly lethality: LethalMode
+    /** null = 횟수 제한 없음 (Q29) */
+    readonly usesPerGame: number | null
+    readonly canTargetOwnFaction: boolean
+    readonly ignoresProtection: boolean
+  }
   readonly cult: {
     /** 교주가 움직일 수 있는 밤. 'even' = 짝수 날 (2, 4, …) */
     readonly activeNights: 'even'
@@ -191,7 +198,17 @@ export function parseRules(raw: unknown): RulesConfig {
   const verdict = obj(dayVote, 'verdict')
   const disguise = obj(root, 'disguise')
   const bomber = obj(root, 'bomber')
+  const sniper = obj(root, 'sniper')
   const cult = obj(root, 'cult')
+
+  // 저격은 페이즈 무관이 확정 규칙이라 다른 값은 받지 않는다 (§5.5).
+  enumOf(sniper, 'sniper', 'phase', ['any'] as const)
+  // 저격이 밤 살해를 대체하는 변형은 구현하지 않았다 (Q30).
+  if (bool(sniper, 'sniper', 'replaces_team_night_kill')) {
+    throw new ConfigError('sniper.replaces_team_night_kill=true 는 아직 구현하지 않았다')
+  }
+  // 보호가 저격을 막는 변형도 구현하지 않았다 (Q31) — 보호 상태는 밤 해소 안에만 존재한다.
+  requireTrue(sniper, 'sniper', 'ignores_protection')
   const police = obj(root, 'police')
   const doctor = obj(root, 'doctor')
 
@@ -254,6 +271,12 @@ export function parseRules(raw: unknown): RulesConfig {
       targetPool: enumOf(disguise, 'disguise', 'target_pool', ['alive_citizens', 'all_citizens'] as const),
       allowDuplicateTarget: bool(disguise, 'disguise', 'allow_duplicate_target'),
       expiresAtEndOfDay: bool(disguise, 'disguise', 'expires_at_end_of_day'),
+    },
+    sniper: {
+      lethality: lethality(sniper, 'sniper', bool(sniper, 'sniper', 'instant_death'), 'damage'),
+      usesPerGame: sniper['uses_per_game'] === null ? null : posInt(sniper, 'sniper', 'uses_per_game'),
+      canTargetOwnFaction: bool(sniper, 'sniper', 'can_target_own_faction'),
+      ignoresProtection: bool(sniper, 'sniper', 'ignores_protection'),
     },
     cult: {
       activeNights: enumOf(cult, 'cult', 'active_nights', ['even'] as const),

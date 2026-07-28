@@ -151,7 +151,7 @@ test('사용 횟수 제한을 걸 수 있다 — 데이터만 고치면 된다 (
   const limited = parseRules(raw)
 
   const first = resolveNight(bombState(), RULES, { kill: BOMB })
-  assert.equal(first.bombUses['b1'], 1, '기본 규칙에서도 사용 횟수는 센다')
+  assert.equal(first.abilityUses['b1'], 1, '기본 규칙에서도 사용 횟수는 센다')
 
   const secondNight = stateOf(
     [
@@ -161,7 +161,7 @@ test('사용 횟수 제한을 걸 수 있다 — 데이터만 고치면 된다 (
       character('c3', 'citizen'),
     ],
     'night',
-    { bombUses: { b1: 1 } },
+    { abilityUses: { b1: 1 } },
   )
   assert.throws(() => resolveNight(secondNight, limited, { kill: BOMB }), /폭탄을 더 쓸 수 없다/)
 })
@@ -176,8 +176,8 @@ test('기본 규칙에서는 횟수 제한이 없다 (🟡 Q12b)', () => {
       character('c3', 'citizen'),
     ],
     'night',
-    { bombUses: { b1: 5 } },
+    { abilityUses: { b1: 5 } },
   )
   const after = resolveNight(state, RULES, { kill: BOMB })
-  assert.equal(after.bombUses['b1'], 6)
+  assert.equal(after.abilityUses['b1'], 6)
 })

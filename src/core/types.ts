@@ -11,7 +11,14 @@ export type Faction = 'citizen' | 'mafia' | 'cult'
  * 교주팀 역할은 아직 설계되지 않았다 (DESIGN.md Q11). 폭탄마는 id 만 있고 능력이 없다 (Q12).
  * `citizen` 은 능력이 없는 게 확정 규칙이다 — 빈 자리가 아니다 (§5.3).
  */
-export type RoleId = 'citizen' | 'police' | 'doctor' | 'mafia' | 'bomber' | 'cultleader'
+export type RoleId =
+  | 'citizen'
+  | 'police'
+  | 'doctor'
+  | 'mafia'
+  | 'bomber'
+  | 'sniper'
+  | 'cultleader'
 
 /**
  * DESIGN.md §6 의 페이즈. `trial` 은 Q3 답(지목 → 변론 → 생사 투표)에서 나왔고,
@@ -45,7 +52,7 @@ export function isConvert(character: Character): boolean {
  * 사망 원인. 밤 살해와 처형은 HP 를 무시하고 죽이고(Q2·Q3),
  * `vote_damage` 는 변신 흡수 피해가 누적돼 HP 가 0 이 된 경우다 — 지금 HP 2 가 쓰이는 유일한 경로.
  */
-export type DeathCause = 'night_kill' | 'execution' | 'vote_damage' | 'collateral'
+export type DeathCause = 'night_kill' | 'execution' | 'vote_damage' | 'collateral' | 'snipe'
 
 /**
  * 페이즈에서 실제로 벌어진 일. 표현층이 이걸 읽어 화면을 만든다.
@@ -64,6 +71,13 @@ export type GameEvent =
       readonly candidates: readonly string[]
     }
   | { readonly kind: 'collateral'; readonly characterId: string; readonly damage: number }
+  /** 스나이퍼의 저격 (§5.5). 페이즈 무관이라 어느 시점에도 로그에 끼어들 수 있다 */
+  | {
+      readonly kind: 'sniped'
+      readonly sniperId: string
+      readonly targetId: string
+      readonly phase: Phase
+    }
   /** 경찰 검사 결과 (§5.3). 결과를 누구에게 보여줄지는 표현층이 정한다 */
   | {
       readonly kind: 'investigated'
@@ -115,8 +129,11 @@ export interface GameState {
   characters: Character[]
   /** 직전 밤에 살해된 캐릭터 — Dawn 공개용. 거르거나 막힌 밤은 null */
   nightKillTarget: string | null
-  /** 폭탄마별 사용 횟수. 횟수 제한(Q12b)이 걸리면 이걸로 판정한다 */
-  bombUses: Record<string, number>
+  /**
+   * 캐릭터별 능력 사용 횟수 (캐릭터 id → 횟수).
+   * 역할은 캐릭터당 하나라서 카운터도 하나면 된다 — 폭탄(Q12b)·저격(Q29) 제한이 이걸 본다.
+   */
+  abilityUses: Record<string, number>
   /** Day 지목 투표: 투표자 id → 지목 대상 id */
   nominationVotes: Record<string, string>
   /** Trial 에 세워진 피고. 지목이 성립하지 않은 날은 null */
