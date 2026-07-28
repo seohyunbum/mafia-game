@@ -90,7 +90,12 @@ test('밤 호출 순서를 데이터에서 읽는다 (§6.1)', () => {
   assert.equal(rules.nightSequence.timeLimitSeconds, 90)
   assert.deepEqual(
     rules.nightSequence.steps.map((s) => s.id),
-    ['mafia', 'sniper', 'police', 'doctor', 'cult'],
+    ['mafia', 'sniper', 'police', 'doctor', 'citizen', 'cult'],
+  )
+  assert.deepEqual(
+    rules.nightSequence.steps.filter((s) => !s.required).map((s) => s.id),
+    ['sniper', 'citizen'],
+    '능력을 쓰지 않아도 되는 직업은 스나이퍼와 시민뿐이다',
   )
   assert.equal(rules.daySchedule.investigationSeconds, 300)
 })

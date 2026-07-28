@@ -73,6 +73,8 @@ interface NightProgress {
   /** 마지막 검사 결과 — 사회자가 경찰에게 읽어준다 */
   report: string | null
   timedOut: boolean
+  /** 첫 호출 전에 "모두 방으로" 화면을 한 번 보여준다 (§6.1.1) */
+  lightsOut: boolean
 }
 
 const setup: Setup = {
@@ -200,6 +202,53 @@ function rosterHtml(list: readonly Character[], options: CardOptions = {}): stri
   return `<div class="roster">${list.map((c) => cardHtml(c, options)).join('')}</div>`
 }
 
+// ── 복도와 방 (§6.1.1) ──────────────────────────────────────────────────────
+
+interface CorridorOptions {
+  /** 지금 방에서 나와 있는 사람들 (호출받은 직업) */
+  out: readonly string[]
+  /** 고를 수 있는 문 */
+  selectable?: readonly string[]
+  picked?: readonly string[]
+  action?: string
+}
+
+/**
+ * 밤의 복도. 대상 선택이 카드가 아니라 **문 고르기**인 것이 이 게임의 진행 방식이다 —
+ * 능력의 대상은 방 안에 있는 사람이고, 호출받은 사람만 복도에 나와 있다.
+ */
+function corridorHtml(list: readonly Character[], options: CorridorOptions): string {
+  const rooms = list
+    .map((c, index) => {
+      const out = options.out.includes(c.id)
+      const selectable = (options.selectable?.includes(c.id) ?? false) && c.alive
+      const picked = options.picked?.includes(c.id) ?? false
+      const classes = [
+        'room',
+        c.alive ? '' : 'dead',
+        out ? 'out' : '',
+        selectable ? 'selectable' : '',
+        picked ? 'picked' : '',
+      ]
+        .filter(Boolean)
+        .join(' ')
+
+      return `<div class="${classes}"
+        data-id="${c.id}"
+        data-action="${selectable ? (options.action ?? '') : ''}">
+        <div class="inside">${portraitSvg(c.id, !c.alive, true)}</div>
+        <div class="door"><span class="plate">${String(index + 1).padStart(2, '0')}</span>
+          <span class="knob"></span></div>
+        <div class="nameplate">
+          <div class="name">${c.name}</div>
+          <div class="tag">${c.alive ? (out ? '복도' : '방 안') : (stamps[c.id] ?? '사망')}</div>
+        </div>
+      </div>`
+    })
+    .join('')
+  return `<div class="corridor">${rooms}</div>`
+}
+
 function slug(g: GameState): string {
   const alive = g.characters.filter((c) => c.alive).length
   const phase =
@@ -290,7 +339,24 @@ function stepTargets(g: GameState, step: ActiveNightStep, actorId: string | null
   })
 }
 
+function lightsOutScreen(g: GameState, p: NightProgress): string {
+  return `<section class="sheet paper">
+    ${slug(g)}
+    <div class="call">
+      <p class="call-prompt">모두 방으로 들어가주세요</p>
+      <p class="call-note">밤이 왔다 · 오늘 호출 ${p.steps.length}회</p>
+    </div>
+    <p class="deck">문이 닫히면 서로를 볼 수 없다. 자기 직업이 불리면 나온다.</p>
+    ${corridorHtml(g.characters, { out: [] })}
+    <div class="actions">
+      <span class="spacer"></span>
+      <button class="primary" data-action="first-call">첫 호출</button>
+    </div>
+  </section>`
+}
+
 function nightScreen(g: GameState, p: NightProgress): string {
+  if (p.lightsOut) return lightsOutScreen(g, p)
   const step = p.steps[p.index]
   if (step === undefined) return ''
   const actor = p.actorId === null ? null : g.characters.find((c) => c.id === p.actorId)
@@ -298,24 +364,43 @@ function nightScreen(g: GameState, p: NightProgress): string {
   const isBomber = actor?.roleId === 'bomber'
   const targets = stepTargets(g, step, p.actorId)
 
+  const targetIds = targets.map((c) => c.id)
   let body: string
-  if (needsActor) {
-    body = `<p class="deck">누가 움직이는가.</p>
-      ${rosterHtml(
-        g.characters.filter((c) => step.actorIds.includes(c.id)),
-        { action: 'pick-actor' },
-      )}`
+  // 시민 호출이 먼저다 — 고를 행위자가 없으므로 행위자 선택 화면으로 들어가면 안 된다.
+  if (step.id === 'citizen') {
+    body = `<p class="deck">시민은 능력이 없다. 나왔다가 그대로 들어간다 — 그 자체가 위장이다.</p>
+      ${corridorHtml(g.characters, { out: step.actorIds })}`
+  } else if (needsActor) {
+    body = `<p class="deck">누가 나오는가.</p>
+      ${corridorHtml(g.characters, {
+        out: step.actorIds,
+        selectable: step.actorIds,
+        action: 'pick-actor',
+      })}`
   } else if (isBomber && p.candidates.length < bomberQuota(g)) {
-    body = `<p class="deck">후보 ${bomberQuota(g)}명을 고른다. 다시 누르면 빠진다. (${p.candidates.length}/${bomberQuota(g)})</p>
-      ${rosterHtml(targets, { action: 'pick-candidate', picked: p.candidates })}`
+    body = `<p class="deck">후보 ${bomberQuota(g)}명의 문을 고른다. 다시 누르면 빠진다. (${p.candidates.length}/${bomberQuota(g)})</p>
+      ${corridorHtml(g.characters, {
+        out: step.actorIds,
+        selectable: targetIds,
+        picked: p.candidates,
+        action: 'pick-candidate',
+      })}`
   } else if (isBomber) {
-    const chosen = g.characters.filter((c) => p.candidates.includes(c.id))
-    body = `<p class="deck">이 셋 중 누가 죽는가. 나머지 둘은 상처를 입는다.</p>
-      ${rosterHtml(chosen, { action: 'pick-target', picked: p.candidates })}
+    body = `<p class="deck">이 셋 중 어느 방이 터지는가. 나머지 둘은 상처를 입는다.</p>
+      ${corridorHtml(g.characters, {
+        out: step.actorIds,
+        selectable: p.candidates,
+        picked: p.candidates,
+        action: 'pick-target',
+      })}
       <div class="actions"><button data-action="reset-candidates">후보 다시 고르기</button></div>`
   } else {
     body = `<p class="deck">${stepPrompt(step.id)}</p>
-      ${rosterHtml(targets, { action: 'pick-target' })}`
+      ${corridorHtml(g.characters, {
+        out: step.actorIds,
+        selectable: targetIds,
+        action: 'pick-target',
+      })}`
   }
 
   return `<section class="sheet paper">
@@ -348,12 +433,12 @@ function nightScreen(g: GameState, p: NightProgress): string {
 }
 
 function stepPrompt(id: string): string {
-  if (id === 'mafia') return '누구를 죽이는가.'
-  if (id === 'sniper') return '쏠 사람을 고른다. 총알은 아껴도 된다.'
-  if (id === 'police') return '누구를 검사하는가.'
-  if (id === 'doctor') return '누구를 지키는가.'
-  if (id === 'cult') return '누구를 사제로 만드는가.'
-  return '대상을 고른다.'
+  if (id === 'mafia') return '어느 방에 들어갈 것인가.'
+  if (id === 'sniper') return '어느 방을 겨눌 것인가. 총알은 아껴도 된다.'
+  if (id === 'police') return '어느 방을 조사할 것인가.'
+  if (id === 'doctor') return '어느 방을 지킬 것인가.'
+  if (id === 'cult') return '어느 방의 문을 두드릴 것인가.'
+  return '문을 고른다.'
 }
 
 function bomberQuota(g: GameState): number {
@@ -635,8 +720,10 @@ function beginNight(): void {
     candidates: [],
     report: null,
     timedOut: false,
+    lightsOut: true,
   }
-  enterStep()
+  stopClock()
+  render()
 }
 
 function enterStep(): void {
@@ -755,6 +842,11 @@ root.addEventListener('click', (event) => {
 
   const p = night
   if (p !== null && g.phase === 'night') {
+    if (action === 'first-call') {
+      p.lightsOut = false
+      enterStep()
+      return
+    }
     const step = p.steps[p.index]
     if (step === undefined) return
 

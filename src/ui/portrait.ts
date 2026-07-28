@@ -37,7 +37,7 @@ const SHOULDER = [
  * 64x64 SVG 문자열. `<svg>` 태그까지 포함해 그대로 innerHTML 에 넣을 수 있다.
  * 죽은 인물은 잉크가 바랜 것처럼 옅게 그린다.
  */
-export function portraitSvg(id: string, dead: boolean): string {
+export function portraitSvg(id: string, dead: boolean, flat = false): string {
   const h = hash(id)
   const hat = HEADWEAR[h % HEADWEAR.length]
   const shoulder = SHOULDER[(h >> 3) % SHOULDER.length]
@@ -51,7 +51,10 @@ export function portraitSvg(id: string, dead: boolean): string {
       <circle cx="${dotGap / 2}" cy="${dotGap / 2}" r="0.85" fill="${ink}" />
     </pattern>
   </defs>
-  <rect width="64" height="64" fill="url(#${patternId})" opacity="${dead ? 0.25 : 0.5}" />
+  ${
+    // 방 안(어두운 배경)에서는 하프톤 배경이 회색 판처럼 보인다 — 그때는 생략한다.
+    flat ? '' : `<rect width="64" height="64" fill="url(#${patternId})" opacity="${dead ? 0.25 : 0.5}" />`
+  }
   <g fill="${ink}">
     <ellipse cx="32" cy="38" rx="12" ry="14" />
     ${hat}

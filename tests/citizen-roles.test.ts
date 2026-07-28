@@ -200,7 +200,7 @@ test('검사 → 보호 → 살해가 한 밤에 같이 해소된다', () => {
   assert.equal(after.phase, 'dawn')
 })
 
-test('일반 시민은 밤에 호출되지 않으므로 시간초과로 죽지 않는다 (§6.1)', () => {
+test('일반 시민은 호출은 받지만 능력이 없어 시간초과로 죽지 않는다 (§6.1)', () => {
   const state = stateOf(
     [character('m1', 'mafia'), character('c1', 'citizen'), character('c2', 'citizen')],
     'night',

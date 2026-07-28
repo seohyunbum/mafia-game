@@ -43,7 +43,7 @@ test('사회자는 정해진 순서대로 직업을 부른다 (확정)', () => {
 
   assert.deepEqual(
     steps.map((s) => s.id),
-    ['mafia', 'sniper', 'police', 'doctor', 'cult'],
+    ['mafia', 'sniper', 'police', 'doctor', 'citizen', 'cult'],
   )
   assert.equal(steps[0]?.prompt, '마피아는 일어나주세요')
 })
@@ -62,11 +62,11 @@ test('교주는 짝수 밤에만 호출된다 (확정)', () => {
   assert.equal(even.includes('cult'), true)
 })
 
-test('스나이퍼 호출만 면제다 — 나머지는 필수 (확정)', () => {
+test('스나이퍼와 시민만 면제다 — 나머지는 필수 (확정)', () => {
   const steps = nightSteps(fullTable(2), RULES)
   const optional = steps.filter((s) => !s.required).map((s) => s.id)
 
-  assert.deepEqual(optional, ['sniper'])
+  assert.deepEqual(optional, ['sniper', 'citizen'])
 })
 
 test('마피아와 폭탄마는 한 호출로 함께 일어난다 (🟡 Q32)', () => {
@@ -76,12 +76,12 @@ test('마피아와 폭탄마는 한 호출로 함께 일어난다 (🟡 Q32)', (
   assert.deepEqual(mafiaStep?.actorIds, ['m1', 'b1'])
 })
 
-test('일반 시민은 호출 목록에 없다 — 능력이 없다 (🟡)', () => {
+test('시민도 호출된다 — 호출 순서만 듣고 구성을 읽지 못하게 (확정)', () => {
   const steps = nightSteps(fullTable(2), RULES)
-  const woken = steps.flatMap((s) => s.actorIds)
+  const citizenStep = steps.find((s) => s.id === 'citizen')
 
-  assert.equal(woken.includes('c1'), false)
-  assert.equal(woken.includes('c2'), false)
+  assert.deepEqual(citizenStep?.actorIds, ['c1', 'c2'])
+  assert.equal(citizenStep?.required, false, '불려 나오지만 아무것도 안 해도 된다')
 })
 
 test('그 직업 생존자가 없으면 호출 자체가 빠진다', () => {
@@ -91,7 +91,7 @@ test('그 직업 생존자가 없으면 호출 자체가 빠진다', () => {
   )
   assert.deepEqual(
     nightSteps(state, RULES).map((s) => s.id),
-    ['mafia'],
+    ['mafia', 'citizen'],
   )
 
   const deadPolice = fullTable(1)
@@ -192,7 +192,7 @@ test('여러 직업이 동시에 시간초과로 죽을 수 있다', () => {
     assert.equal(isAlive(after, id), false, `${id} 가 살아 있다`)
   }
   assert.equal(isAlive(after, 's1'), true, '스나이퍼는 면제')
-  assert.equal(isAlive(after, 'c1'), true, '시민은 호출되지 않는다')
+  assert.equal(isAlive(after, 'c1'), true, '시민은 호출받지만 면제')
 })
 
 test('시간초과 사망도 승리 판정을 부른다', () => {
