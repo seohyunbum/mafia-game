@@ -16,6 +16,7 @@ export function character(id: string, roleId: RoleId, overrides: Partial<Charact
     hp: 2,
     alive: true,
     disguisedAs: null,
+    convertedAtDay: null,
     ...overrides,
   }
 }

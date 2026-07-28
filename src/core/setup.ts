@@ -16,6 +16,7 @@ const ROLE_FACTION: Readonly<Record<RoleId, Faction>> = {
   doctor: 'citizen',
   mafia: 'mafia',
   bomber: 'mafia',
+  cultleader: 'cult',
 }
 
 export function factionOf(roleId: RoleId): Faction {
@@ -130,6 +131,7 @@ export function createGame(options: SetupOptions, rules: RulesConfig, rng: Rng):
       hp: rules.startHp,
       alive: true,
       disguisedAs: null,
+      convertedAtDay: null,
     }
   })
 

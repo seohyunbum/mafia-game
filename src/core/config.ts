@@ -59,11 +59,22 @@ export interface RulesConfig {
     readonly allowDuplicateTarget: boolean
     readonly expiresAtEndOfDay: boolean
   }
+  readonly cult: {
+    /** 교주가 움직일 수 있는 밤. 'even' = 짝수 날 (2, 4, …) */
+    readonly activeNights: 'even'
+    readonly conversionsPerActivation: number
+    readonly canConvertMafia: boolean
+    readonly protectBlocksConversion: boolean
+  }
   readonly victory: {
-    /** 해당 진영의 승리를 판정하는가. null 이면 판정하지 않는다 (교주팀 = Q11 미설계) */
+    /** 상대 진영이 전멸하면 승리하는 진영들 */
     readonly citizen: boolean
     readonly mafia: boolean
-    readonly cult: boolean
+    /**
+     * 교주팀은 전멸형이 아니다 — "두 명 빼고 모두 사제". null 이면 판정하지 않는다.
+     * `survivorsLeft` = 남겨도 되는 비-교주팀 생존자 수, `minConverts` = 최소 사제 수.
+     */
+    readonly cult: { readonly survivorsLeft: number; readonly minConverts: number } | null
   }
   readonly turn: {
     readonly firstPhase: 'night' | 'day'
@@ -133,7 +144,7 @@ function requireTrue(source: Json, path: string, key: string): void {
   )
 }
 
-/** 승리 조건 문자열 → 판정 여부. null = 미설계 진영이라 판정하지 않는다. */
+/** 전멸형 승리 조건 → 판정 여부. null = 미설계 진영이라 판정하지 않는다. */
 function victoryFlag(source: Json, key: string): boolean {
   const value = source[key]
   if (value === null) return false
@@ -141,6 +152,24 @@ function victoryFlag(source: Json, key: string): boolean {
   throw new ConfigError(
     `victory.${key} 는 'opposing_factions_all_dead' 또는 null 이어야 한다 (받은 값: ${JSON.stringify(value)})`,
   )
+}
+
+/** 교주팀 승리 조건. 전멸형이 아니라 "두 명 빼고 모두 사제" 형태다. */
+function cultVictory(source: Json): { survivorsLeft: number; minConverts: number } | null {
+  const value = source['cult']
+  if (value === null) return null
+  if (value !== 'all_but_n_converted') {
+    throw new ConfigError(
+      `victory.cult 는 'all_but_n_converted' 또는 null 이어야 한다 (받은 값: ${JSON.stringify(value)})`,
+    )
+  }
+  const survivorsLeft = source['cult_survivors_left']
+  if (typeof survivorsLeft !== 'number' || !Number.isInteger(survivorsLeft) || survivorsLeft < 0) {
+    throw new ConfigError(
+      `victory.cult_survivors_left 는 0 이상의 정수여야 한다 (받은 값: ${JSON.stringify(survivorsLeft)})`,
+    )
+  }
+  return { survivorsLeft, minConverts: posInt(source, 'victory', 'cult_min_converts') }
 }
 
 export function parseRules(raw: unknown): RulesConfig {
@@ -162,8 +191,16 @@ export function parseRules(raw: unknown): RulesConfig {
   const verdict = obj(dayVote, 'verdict')
   const disguise = obj(root, 'disguise')
   const bomber = obj(root, 'bomber')
+  const cult = obj(root, 'cult')
   const police = obj(root, 'police')
   const doctor = obj(root, 'doctor')
+
+  // 사제가 원래 역할을 잃는 변형은 구현하지 않았다.
+  requireTrue(cult, 'cult', 'converts_keep_role')
+  // 교주가 죽으면 사제가 풀리는 변형도 구현하지 않았다 (Q27).
+  if (bool(cult, 'cult', 'leader_death_frees_converts')) {
+    throw new ConfigError('cult.leader_death_frees_converts=true 는 아직 구현하지 않았다')
+  }
 
   // 사망 시 자동 폭발은 구현하지 않았다 (Q12a).
   enumOf(bomber, 'bomber', 'trigger', ['active_night'] as const)
@@ -218,10 +255,16 @@ export function parseRules(raw: unknown): RulesConfig {
       allowDuplicateTarget: bool(disguise, 'disguise', 'allow_duplicate_target'),
       expiresAtEndOfDay: bool(disguise, 'disguise', 'expires_at_end_of_day'),
     },
+    cult: {
+      activeNights: enumOf(cult, 'cult', 'active_nights', ['even'] as const),
+      conversionsPerActivation: posInt(cult, 'cult', 'conversions_per_activation'),
+      canConvertMafia: bool(cult, 'cult', 'can_convert_mafia'),
+      protectBlocksConversion: bool(cult, 'cult', 'protect_blocks_conversion'),
+    },
     victory: {
       citizen: victoryFlag(obj(root, 'victory'), 'citizen'),
       mafia: victoryFlag(obj(root, 'victory'), 'mafia'),
-      cult: victoryFlag(obj(root, 'victory'), 'cult'),
+      cult: cultVictory(obj(root, 'victory')),
     },
     turn: {
       firstPhase: enumOf(obj(root, 'turn'), 'turn', 'first_phase', ['night', 'day'] as const),

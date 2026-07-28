@@ -19,7 +19,7 @@ import type {
   Rng,
   Verdict,
 } from './types.ts'
-import { RuleError } from './types.ts'
+import { RuleError, isConvert } from './types.ts'
 import type { LethalMode, RulesConfig } from './config.ts'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -85,24 +85,43 @@ function applyLethal(
   if (character.hp <= 0) kill(next, character, cause)
 }
 
+function win(next: GameState, faction: Faction): void {
+  next.winner = faction
+  next.phase = 'ended'
+  next.log.push({ kind: 'victory', faction })
+}
+
 /**
- * 승리 판정. 사망이 생길 수 있는 지점마다 호출한다 (DESIGN.md §3).
- * 판정하지 않는 진영(교주팀 = Q11 미설계)은 config 에서 꺼져 있다.
+ * 승리 판정. 사망·전향이 생길 수 있는 지점마다 호출한다 (DESIGN.md §3).
+ *
+ * 진영마다 이기는 방식이 다르다 — 마피아팀·시민팀은 **전멸형**, 교주팀은 **전향형**이다.
+ * 전향형을 먼저 본다: 교주팀 조건은 교주팀 생존을 요구하므로 전멸형과 동시에 성립하지 않는다.
  */
 function checkVictory(next: GameState, rules: RulesConfig): void {
   if (next.winner !== null) return
 
+  // 교주팀 — "두 명 빼고 모두 사제" (§5.4)
+  const cultRule = rules.victory.cult
+  if (cultRule !== null) {
+    const converts = aliveOf(next, 'cult').filter(isConvert).length
+    const outsiders = alive(next).filter((c) => c.faction !== 'cult').length
+    if (converts >= cultRule.minConverts && outsiders <= cultRule.survivorsLeft) {
+      win(next, 'cult')
+      return
+    }
+  }
+
+  // 전멸형 — 상대 진영이 다 죽으면 승리
   const contenders: Faction[] = ['citizen', 'mafia', 'cult']
   for (const faction of contenders) {
-    if (!rules.victory[faction]) continue
+    if (faction !== 'cult' && !rules.victory[faction]) continue
+    if (faction === 'cult') continue // 교주팀은 전향형만 판정한다
     if (aliveOf(next, faction).length === 0) continue
     const opponentsAlive = contenders
       .filter((f) => f !== faction)
       .some((f) => aliveOf(next, f).length > 0)
     if (!opponentsAlive) {
-      next.winner = faction
-      next.phase = 'ended'
-      next.log.push({ kind: 'victory', faction })
+      win(next, faction)
       return
     }
   }
@@ -169,6 +188,54 @@ function resolveProtections(next: GameState, rules: RulesConfig, actions: NightA
     next.log.push({ kind: 'protected', doctorId, targetId })
   }
   return protectedIds
+}
+
+/** 교주가 이번 밤에 움직일 수 있는가 — 짝수 밤만 ✅ (§5.4). */
+export function cultCanAct(state: GameState, rules: RulesConfig): boolean {
+  return rules.cult.activeNights === 'even' && state.day % 2 === 0
+}
+
+/**
+ * 교주의 포교. 대상은 원래 역할을 유지한 채 진영만 교주팀이 된다 (🟡 §5.4).
+ * 살해보다 먼저 해소되므로 전향된 그 밤에 죽을 수도 있다.
+ */
+function resolveConversion(
+  next: GameState,
+  rules: RulesConfig,
+  actions: NightActions,
+  protectedIds: ReadonlySet<string>,
+): void {
+  const conversion = actions.conversion
+  if (conversion === undefined) return
+
+  const leader = find(next, conversion.cultLeaderId)
+  if (leader.roleId !== 'cultleader') throw new RuleError(`포교는 교주의 능력이다: ${leader.id}`)
+  if (!leader.alive) throw new RuleError(`죽은 교주는 포교할 수 없다: ${leader.id}`)
+  if (!cultCanAct(next, rules)) {
+    throw new RuleError(`교주는 짝수 밤에만 움직인다 (현재 ${next.day}일차)`)
+  }
+
+  const target = find(next, conversion.targetId)
+  if (!target.alive) throw new RuleError(`죽은 캐릭터는 포교할 수 없다: ${target.id}`)
+  if (target.id === leader.id) throw new RuleError('교주는 자기 자신을 포교하지 않는다')
+  if (target.faction === 'cult') throw new RuleError(`이미 교주팀이다: ${target.id}`)
+  if (!rules.cult.canConvertMafia && target.faction === 'mafia') {
+    throw new RuleError(`마피아팀은 포교할 수 없다: ${target.id}`)
+  }
+  if (rules.cult.protectBlocksConversion && protectedIds.has(target.id)) {
+    // 이 규칙이 켜져 있으면 의사 보호가 포교도 막는다. 조용히 넘기지 않고 이벤트로 남긴다.
+    next.log.push({ kind: 'conversion_blocked', targetId: target.id })
+    return
+  }
+
+  next.log.push({
+    kind: 'converted',
+    cultLeaderId: leader.id,
+    targetId: target.id,
+    fromFaction: target.faction,
+  })
+  target.faction = 'cult'
+  target.convertedAtDay = next.day
 }
 
 /** 폭탄마 후보 명단 검증 — 규칙 위반은 밤이 해소되기 전에 잡는다. */
@@ -285,6 +352,7 @@ export function resolveNight(state: GameState, rules: RulesConfig, actions: Nigh
 
   resolveInvestigations(next, rules, actions)
   const protectedIds = resolveProtections(next, rules, actions)
+  resolveConversion(next, rules, actions, protectedIds)
 
   if (actions.kill === null) {
     if (!rules.nightKill.maySkip) throw new RuleError('이 규칙에서는 밤 살해를 거를 수 없다')

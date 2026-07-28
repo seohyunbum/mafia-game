@@ -58,6 +58,21 @@
     "_disguised_nominee_survives_status": "interpretation — 흡수한 마피아는 죽지 않고 생존"
   },
 
+  "cult": {
+    "active_nights": "even",
+    "_active_nights_status": "confirmed — 교주는 짝수 밤에만 움직인다",
+    "conversions_per_activation": 1,
+    "_conversions_per_activation_status": "interpretation — '사제를 늘린다'를 한 밤 1명으로 읽었다",
+    "can_convert_mafia": true,
+    "_can_convert_mafia_status": "interpretation (Q26) — 막으면 '두 명 빼고 모두'에 도달하는 경로가 닫힌다",
+    "protect_blocks_conversion": false,
+    "_protect_blocks_conversion_status": "interpretation — 의사 보호는 살해 전용",
+    "converts_keep_role": true,
+    "_converts_keep_role_status": "interpretation — 원래 역할을 유지한 채 진영만 바뀐다. 경찰이 사제가 되면 검사 정보가 교주팀 것이 된다",
+    "leader_death_frees_converts": false,
+    "_leader_death_frees_converts_status": "interpretation (Q27) — 교주가 죽어도 사제는 교주팀으로 남는다"
+  },
+
   "police": {
     "phase": "night",
     "_phase_status": "interpretation (Q21) — 검사 시점이 밤이면 변신과 얽히지 않는다",
@@ -100,8 +115,12 @@
     "_mafia_status": "confirmed — 시민팀과 교주팀 전원 사망",
     "citizen": "opposing_factions_all_dead",
     "_citizen_status": "interpretation (Q16) — 통상 규칙으로 채움. 비우면 소프트락이 된다",
-    "cult": null,
-    "_cult_status": "undecided (Q11) — 교주팀 미설계, 판정하지 않는다"
+    "cult": "all_but_n_converted",
+    "_cult_status": "confirmed — 두 명 빼고 모두 사제가 되면 승리",
+    "cult_survivors_left": 2,
+    "_cult_survivors_left_status": "confirmed — '두 명 빼고'. 비-교주팀 생존자가 이 수 이하면 승리",
+    "cult_min_converts": 1,
+    "_cult_min_converts_status": "interpretation — 포교가 한 번은 일어나야 한다. 없으면 소인원 판에서 시작 즉시 교주 승리가 된다"
   },
 
   "turn": {

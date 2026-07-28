@@ -11,7 +11,7 @@ export type Faction = 'citizen' | 'mafia' | 'cult'
  * 교주팀 역할은 아직 설계되지 않았다 (DESIGN.md Q11). 폭탄마는 id 만 있고 능력이 없다 (Q12).
  * `citizen` 은 능력이 없는 게 확정 규칙이다 — 빈 자리가 아니다 (§5.3).
  */
-export type RoleId = 'citizen' | 'police' | 'doctor' | 'mafia' | 'bomber'
+export type RoleId = 'citizen' | 'police' | 'doctor' | 'mafia' | 'bomber' | 'cultleader'
 
 /**
  * DESIGN.md §6 의 페이즈. `trial` 은 Q3 답(지목 → 변론 → 생사 투표)에서 나왔고,
@@ -24,12 +24,21 @@ export type Verdict = 'kill' | 'spare'
 export interface Character {
   readonly id: string
   readonly name: string
+  /** 전향해도 바뀌지 않는다 — 사제는 역할이 아니라 진영 상태다 (§5.4) */
   readonly roleId: RoleId
-  readonly faction: Faction
+  /** 포교로 'cult' 가 될 수 있다. 그래서 readonly 가 아니다 */
+  faction: Faction
   hp: number
   alive: boolean
   /** 변신 중이면 흉내내고 있는 캐릭터 id, 아니면 null */
   disguisedAs: string | null
+  /** 사제가 된 날. null 이면 전향하지 않았다 — 원래 진영 정보를 잃지 않기 위해 날짜로 남긴다 */
+  convertedAtDay: number | null
+}
+
+/** 교주에게 포교당해 교주팀이 된 사람. 교주 본인은 사제가 아니다. */
+export function isConvert(character: Character): boolean {
+  return character.convertedAtDay !== null
 }
 
 /**
@@ -63,6 +72,15 @@ export type GameEvent =
       readonly result: 'mafia' | 'not_mafia'
     }
   | { readonly kind: 'protected'; readonly doctorId: string; readonly targetId: string }
+  /** 교주의 포교 (§5.4). 전향 사실을 누구에게 보여줄지는 표현층이 정한다 */
+  | {
+      readonly kind: 'converted'
+      readonly cultLeaderId: string
+      readonly targetId: string
+      readonly fromFaction: Faction
+    }
+  /** 의사 보호가 포교를 막는 규칙이 켜져 있을 때만 나온다 */
+  | { readonly kind: 'conversion_blocked'; readonly targetId: string }
   /** 의사가 그 밤의 살해를 막았다 */
   | { readonly kind: 'kill_blocked'; readonly targetId: string }
   | { readonly kind: 'disguised'; readonly mafiaId: string; readonly originId: string }
@@ -129,6 +147,8 @@ export interface NightActions {
   readonly kill: NightKillAction | null
   readonly protects?: readonly { readonly doctorId: string; readonly targetId: string }[]
   readonly investigations?: readonly { readonly policeId: string; readonly targetId: string }[]
+  /** 교주의 포교. 짝수 밤에만 낼 수 있다 (§5.4) */
+  readonly conversion?: { readonly cultLeaderId: string; readonly targetId: string }
 }
 
 /** 무작위성은 전부 주입받는다 — 테스트가 결정론적이어야 하기 때문이다 (DESIGN.md §8.1). */

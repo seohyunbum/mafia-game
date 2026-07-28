@@ -20,11 +20,37 @@ test('실제 data/rules.json 이 파싱되고 확정 규칙이 그대로 실려 
   assert.equal(rules.verdict.disguisedNomineeSurvives, true, 'Q1: 마피아 본인은 무피해')
 })
 
-test('교주팀은 승리 판정에서 빠져 있다 — 아직 설계되지 않았다 (Q11)', () => {
+test('진영마다 승리 방식이 다르다 — 전멸형 둘, 전향형 하나', () => {
   const rules = loadRules()
-  assert.equal(rules.victory.cult, false)
-  assert.equal(rules.victory.mafia, true)
-  assert.equal(rules.victory.citizen, true, '비우면 소프트락이 되므로 🟡 로라도 채워야 한다')
+  assert.equal(rules.victory.mafia, true, '마피아팀: 전멸형')
+  assert.equal(rules.victory.citizen, true, '시민팀: 전멸형. 비우면 소프트락이 된다')
+  assert.deepEqual(
+    rules.victory.cult,
+    { survivorsLeft: 2, minConverts: 1 },
+    '교주팀: 두 명 빼고 모두 사제 (전향형)',
+  )
+})
+
+test('교주는 짝수 밤에만 움직인다 (확정)', () => {
+  const rules = loadRules()
+  assert.equal(rules.cult.activeNights, 'even')
+  assert.equal(rules.cult.conversionsPerActivation, 1)
+})
+
+test('아직 구현하지 않은 교주 변형을 데이터로 켜면 기동을 실패한다', () => {
+  const withFreedConverts = rawRules()
+  withFreedConverts['cult']['leader_death_frees_converts'] = true
+  assert.throws(() => parseRules(withFreedConverts), /leader_death_frees_converts/)
+
+  const withoutRole = rawRules()
+  withoutRole['cult']['converts_keep_role'] = false
+  assert.throws(() => parseRules(withoutRole), /converts_keep_role/)
+})
+
+test('교주팀 승리 조건을 끌 수도 있다 (null)', () => {
+  const raw = rawRules()
+  raw['victory']['cult'] = null
+  assert.equal(parseRules(raw).victory.cult, null)
 })
 
 test('미정(null) 값을 만나면 조용히 기본값으로 넘어가지 않고 기동을 실패한다', () => {

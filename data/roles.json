@@ -86,8 +86,26 @@
           "_replaces_team_night_kill_note": "interpretation — 그 밤 마피아팀 살해를 대체한다. 일반 마피아가 따로 또 죽이지 않는다"
         }
       ]
+    },
+    {
+      "id": "cultleader",
+      "name": "교주",
+      "faction": "cult",
+      "start_hp": 2,
+      "abilities": [
+        {
+          "id": "convert",
+          "phase": "night",
+          "name": "포교",
+          "description": "짝수 밤에만 움직일 수 있다. 활동할 때 한 명을 사제로 만든다. 사제가 된 사람은 원래 역할을 유지한 채 교주팀이 된다.",
+          "status": "confirmed — 짝수 밤 제한과 승리 조건(두 명 빼고 모두 사제) 확정. 대상 제약은 해석 (DESIGN.md §5.4)",
+          "active_nights": "even"
+        }
+      ]
     }
   ],
+
+  "_cult_leader_note": "교주는 roles 에 있고, 사제는 없다. 사제는 역할이 아니라 '진영이 교주팀으로 바뀐 상태'다 (DESIGN.md §5.4)",
 
   "factions": [
     {
@@ -105,8 +123,8 @@
     {
       "id": "cult",
       "name": "교주팀",
-      "win_condition": null,
-      "status": "undecided — 이름과 '마피아의 제거 대상'만 확정 (DESIGN.md Q11)"
+      "win_condition": "두 명 빼고 모두 사제가 되면 승리",
+      "status": "confirmed — 구성은 교주 + 사제(전향된 사람들) (DESIGN.md §5.4)"
     }
   ]
 }
