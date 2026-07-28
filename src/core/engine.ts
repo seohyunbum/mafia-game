@@ -137,7 +137,93 @@ function pick<T>(items: readonly T[], rng: Rng): T {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Night — 검사(경찰) → 보호(의사) → 살해(마피아팀). 셋을 한꺼번에 해소한다 (§6)
+// 밤 호출 순서 — 사회자가 직업을 하나씩 깨운다 (§6.1)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 이번 밤에 실제로 부를 호출 하나. `actorIds` 가 눈을 뜨는 사람들이다. */
+export interface ActiveNightStep {
+  readonly id: string
+  /** "마피아는 일어나주세요" */
+  readonly prompt: string
+  readonly timeLimitSeconds: number
+  /** false 면 행동하지 않아도 페널티가 없다 (스나이퍼) */
+  readonly required: boolean
+  readonly actorIds: readonly string[]
+}
+
+/**
+ * 이번 밤의 호출 순서. 표현층이 이 순서대로 진행하며 `timeLimitSeconds` 를 잰다.
+ *
+ * 빠지는 호출: 그 직업 생존자가 없거나, 짝수 밤 전용인데 홀수 밤이거나.
+ * **일반 시민은 애초에 데이터의 호출 목록에 없다** — 능력이 없어서 부를 것이 없다 (§6.1).
+ */
+export function nightSteps(state: GameState, rules: RulesConfig): ActiveNightStep[] {
+  const steps: ActiveNightStep[] = []
+  for (const step of rules.nightSequence.steps) {
+    if (step.evenNightsOnly && state.day % 2 !== 0) continue
+    const actorIds = state.characters
+      .filter((c) => c.alive && step.roleIds.includes(c.roleId))
+      .map((c) => c.id)
+    if (actorIds.length === 0) continue
+    steps.push({
+      id: step.id,
+      prompt: step.prompt,
+      timeLimitSeconds: rules.nightSequence.timeLimitSeconds,
+      required: step.required,
+      actorIds,
+    })
+  }
+  return steps
+}
+
+/**
+ * 제출된 행동에서 "능력을 쓴 역할"을 모은다.
+ *
+ * 호출은 직업 단위이므로 판정도 역할 단위다 — 마피아팀 호출처럼 여러 역할이 묶인 호출은
+ * 그 중 하나만 행동해도 이행으로 본다 (🟡 §6.1, Q32).
+ */
+function actedRoles(state: GameState, actions: NightActions): Set<string> {
+  const acted = new Set<string>()
+  const mark = (id: string): void => {
+    const actor = state.characters.find((c) => c.id === id)
+    if (actor) acted.add(actor.roleId)
+  }
+
+  if (actions.kill !== null) mark(actions.kill.actorId)
+  for (const { policeId } of actions.investigations ?? []) mark(policeId)
+  for (const { doctorId } of actions.protects ?? []) mark(doctorId)
+  if (actions.conversion !== undefined) mark(actions.conversion.cultLeaderId)
+  return acted
+}
+
+/**
+ * 시간초과 사망 (✅ §6.1). 필수 호출에 행동이 하나도 없으면 그 직업 생존자가 전원 죽는다.
+ *
+ * 호출 목록은 **밤 행동을 적용하기 전** 상태로 계산해 넘겨받는다 — 그 밤에 살해당한 사람을
+ * 시간초과로 한 번 더 처리하지 않기 위해서다(이미 죽었으면 건너뛴다).
+ */
+function applyTimeoutDeaths(
+  next: GameState,
+  steps: readonly ActiveNightStep[],
+  acted: ReadonlySet<string>,
+  rules: RulesConfig,
+): void {
+  for (const step of steps) {
+    if (!step.required) continue
+    const stepRoles = rules.nightSequence.steps.find((s) => s.id === step.id)?.roleIds ?? []
+    if (stepRoles.some((role) => acted.has(role))) continue
+
+    for (const id of step.actorIds) {
+      const actor = find(next, id)
+      if (!actor.alive) continue
+      next.log.push({ kind: 'timed_out', stepId: step.id, characterId: id })
+      kill(next, actor, 'timeout')
+    }
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Night — 검사(경찰) → 보호(의사) → 포교(교주) → 살해(마피아팀) 순으로 해소 (§6)
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** 경찰 검사. 살해를 적용하기 **전** 상태를 본다 🟡 — 그 밤에 죽는 사람도 결과는 나온다. */
@@ -340,10 +426,18 @@ function resolveKill(
 
 /**
  * 밤 행동을 모두 해소하고 Dawn 으로 넘어간다.
- * `actions.kill === null` 은 살해를 거른 밤 (🟡 Q19 — `night_kill.may_skip`).
+ *
+ * **표현층이 제한시간을 재고, 시간 안에 들어온 행동만 넘긴다** (§6.1). 그래서 코어에서
+ * "필수 호출에 행동이 없다" = "시간초과" 이고, 그 직업은 죽는다.
+ * `actions.kill === null` 도 마피아팀 호출을 이행하지 않은 것이므로 페널티 대상이다.
  */
 export function resolveNight(state: GameState, rules: RulesConfig, actions: NightActions): GameState {
   requirePhase(state, 'night')
+
+  // 살해가 적용되기 전 상태로 호출 목록을 확정한다 (§6.1).
+  const steps = nightSteps(state, rules)
+  const acted = actedRoles(state, actions)
+
   const next = clone(state)
   next.nominationVotes = {}
   next.verdictVotes = {}
@@ -353,13 +447,9 @@ export function resolveNight(state: GameState, rules: RulesConfig, actions: Nigh
   resolveInvestigations(next, rules, actions)
   const protectedIds = resolveProtections(next, rules, actions)
   resolveConversion(next, rules, actions, protectedIds)
+  if (actions.kill !== null) resolveKill(next, rules, actions.kill, protectedIds)
 
-  if (actions.kill === null) {
-    if (!rules.nightKill.maySkip) throw new RuleError('이 규칙에서는 밤 살해를 거를 수 없다')
-    next.log.push({ kind: 'night_skipped' })
-  } else {
-    resolveKill(next, rules, actions.kill, protectedIds)
-  }
+  applyTimeoutDeaths(next, steps, acted, rules)
 
   next.phase = 'dawn'
   checkVictory(next, rules)

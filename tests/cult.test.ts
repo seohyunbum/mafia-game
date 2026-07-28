@@ -218,7 +218,7 @@ test('두 명 빼고 모두 사제가 되면 교주팀 승리 (확정)', () => {
 
   assert.equal(after.winner, 'cult')
   assert.equal(after.phase, 'ended')
-  assert.deepEqual(kinds(after), ['converted', 'night_skipped', 'victory'])
+  assert.deepEqual(kinds(after), ['converted', 'victory'])
 })
 
 test('사제가 0명이면 이기지 않는다 — 포교가 한 번은 일어나야 한다 (🟡)', () => {

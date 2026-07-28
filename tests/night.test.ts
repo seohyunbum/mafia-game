@@ -26,12 +26,12 @@ test('일반 마피아의 밤 살해는 HP 2 여도 즉사다 (Q2 확정)', () =
   assert.equal(after.phase, 'dawn')
 })
 
-test('살해를 거른 밤도 있다 (🟡 Q19)', () => {
+test('살해를 거르면 마피아가 죽는다 — 밤 호출을 이행하지 않은 것이다 (확정 §6.1)', () => {
   const after = resolveNight(nightState(), RULES, { kill: null })
 
   assert.equal(after.nightKillTarget, null)
-  assert.deepEqual(kinds(after), ['night_skipped'])
-  assert.equal(after.characters.filter((c) => c.alive).length, 4)
+  assert.equal(isAlive(after, 'm1'), false, '시간 안에 능력을 쓰지 않으면 사망')
+  assert.deepEqual(kinds(after), ['timed_out', 'died', 'victory'])
 })
 
 test('일반 마피아는 후보 명단을 내지 않는다 — 그건 폭탄마 것이다', () => {

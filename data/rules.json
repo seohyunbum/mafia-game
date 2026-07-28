@@ -1,5 +1,5 @@
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "_comment": "전역 규칙 수치. status 가 confirmed 면 사용자가 직접 말한 규칙이라 임의로 바꾸지 않는다. interpretation 은 내 해석이라 답이 오면 여기만 고치면 된다. undecided 는 null 로 남긴다 (임의값 금지). 정본 설명은 docs/DESIGN.md",
 
   "character": {
@@ -11,9 +11,57 @@
     "instant_death": true,
     "_instant_death_status": "confirmed (Q2) — 찍힌 사람은 HP 무시하고 확정 사망",
     "kills_per_night": 1,
-    "_kills_per_night_status": "interpretation (Q10) — 마피아팀 합의 1회. 폭탄마가 쓰면 일반 살해를 대체한다",
-    "may_skip": true,
-    "_may_skip_status": "interpretation (Q19) — 살해를 거르는 밤 허용"
+    "_kills_per_night_status": "interpretation (Q10) — 마피아팀 합의 1회. 폭탄마가 쓰면 일반 살해를 대체한다"
+  },
+
+  "night_sequence": {
+    "_comment": "사회자가 직업을 순서대로 깨운다. 시간은 표현층이 재고, 코어는 '행동 없는 필수 호출 = 시간초과'로 본다 (DESIGN.md §6.1)",
+    "time_limit_seconds": 90,
+    "_time_limit_seconds_status": "confirmed — 직업마다 1분 30초",
+    "timeout_penalty": "death",
+    "_timeout_penalty_status": "confirmed — 시간 안에 능력을 쓰지 않으면 사망",
+    "steps": [
+      {
+        "id": "mafia",
+        "prompt": "마피아는 일어나주세요",
+        "roles": ["mafia", "bomber"],
+        "required": true,
+        "_roles_status": "interpretation (Q32) — 마피아와 폭탄마를 한 번에 깨운다. 팀 살해가 1회라서 둘 중 누가 하든 이행으로 본다"
+      },
+      {
+        "id": "sniper",
+        "prompt": "스나이퍼는 일어나주세요",
+        "roles": ["sniper"],
+        "required": false,
+        "_required_status": "confirmed — 스나이퍼는 능력을 쓰지 않아도 된다"
+      },
+      {
+        "id": "police",
+        "prompt": "경찰은 일어나주세요",
+        "roles": ["police"],
+        "required": true
+      },
+      {
+        "id": "doctor",
+        "prompt": "의사는 일어나주세요",
+        "roles": ["doctor"],
+        "required": true
+      },
+      {
+        "id": "cult",
+        "prompt": "교주는 일어나주세요",
+        "roles": ["cultleader"],
+        "required": true,
+        "even_nights_only": true,
+        "_even_nights_only_status": "confirmed — 교주는 짝수 밤에만 일어난다"
+      }
+    ],
+    "_steps_note": "일반 시민은 능력이 없어서 호출에 없다. 호출이 없으면 시간초과도 없다"
+  },
+
+  "day_schedule": {
+    "investigation_seconds": 300,
+    "_investigation_seconds_status": "confirmed — 밤이 끝나면 5분 동안 시체 조사·행동, 그 다음 투표 (Morning 페이즈)"
   },
 
   "bomber": {

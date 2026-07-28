@@ -7,7 +7,21 @@
  * `_*_status` 주석 키들은 사람이 읽는 메타데이터라 파서가 무시한다.
  */
 
-export const RULES_SCHEMA_VERSION = 3
+import { isRoleId, type RoleId } from './types.ts'
+
+export const RULES_SCHEMA_VERSION = 4
+
+/**
+ * 사회자가 깨우는 한 호출 (DESIGN.md §6.1).
+ * `required: false` 면 행동하지 않아도 페널티가 없다 (스나이퍼).
+ */
+export interface NightStepConfig {
+  readonly id: string
+  readonly prompt: string
+  readonly roleIds: readonly RoleId[]
+  readonly required: boolean
+  readonly evenNightsOnly: boolean
+}
 
 /** 밤 살해 판정 (DESIGN.md Q2 = instant / Q17 이 뒤집히면 damage) */
 export type LethalMode = { readonly kind: 'instant' } | { readonly kind: 'damage'; readonly amount: number }
@@ -16,7 +30,15 @@ export interface RulesConfig {
   readonly startHp: number
   readonly nightKill: {
     readonly lethality: LethalMode
-    readonly maySkip: boolean
+  }
+  readonly nightSequence: {
+    /** 호출당 제한시간. 코어는 시계를 갖지 않고 표현층에 이 값을 넘겨준다 */
+    readonly timeLimitSeconds: number
+    readonly steps: readonly NightStepConfig[]
+  }
+  readonly daySchedule: {
+    /** 밤이 끝나고 시체를 조사·행동하는 시간 (Morning 페이즈) */
+    readonly investigationSeconds: number
   }
   readonly bomber: {
     readonly candidateCount: number
@@ -161,6 +183,51 @@ function victoryFlag(source: Json, key: string): boolean {
   )
 }
 
+function str(source: Json, path: string, key: string): string {
+  const value = source[key]
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new ConfigError(`${path}.${key} 는 비어 있지 않은 문자열이어야 한다 (받은 값: ${JSON.stringify(value)})`)
+  }
+  return value
+}
+
+/** 밤 호출 순서. 순서가 곧 사회자가 부르는 순서다. */
+function nightSteps(source: Json): NightStepConfig[] {
+  const raw = source['steps']
+  if (!Array.isArray(raw) || raw.length === 0) {
+    throw new ConfigError('night_sequence.steps 는 비어 있지 않은 배열이어야 한다')
+  }
+
+  const seen = new Set<string>()
+  return raw.map((entry, index) => {
+    const path = `night_sequence.steps[${index}]`
+    if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) {
+      throw new ConfigError(`${path} 는 객체여야 한다`)
+    }
+    const step = entry as Json
+
+    const id = str(step, path, 'id')
+    if (seen.has(id)) throw new ConfigError(`${path}.id 가 중복이다: ${id}`)
+    seen.add(id)
+
+    const roles = step['roles']
+    if (!Array.isArray(roles) || roles.length === 0) {
+      throw new ConfigError(`${path}.roles 는 비어 있지 않은 배열이어야 한다`)
+    }
+    for (const role of roles) {
+      if (!isRoleId(role)) throw new ConfigError(`${path}.roles 에 모르는 역할이 있다: ${JSON.stringify(role)}`)
+    }
+
+    return {
+      id,
+      prompt: str(step, path, 'prompt'),
+      roleIds: roles as RoleId[],
+      required: bool(step, path, 'required'),
+      evenNightsOnly: step['even_nights_only'] === undefined ? false : bool(step, path, 'even_nights_only'),
+    }
+  })
+}
+
 /** 교주팀 승리 조건. 전멸형이 아니라 "두 명 빼고 모두 사제" 형태다. */
 function cultVictory(source: Json): { survivorsLeft: number; minConverts: number } | null {
   const value = source['cult']
@@ -193,6 +260,10 @@ export function parseRules(raw: unknown): RulesConfig {
   }
 
   const nightKill = obj(root, 'night_kill')
+  const nightSequence = obj(root, 'night_sequence')
+
+  // 시간초과 페널티가 사망이 아닌 변형은 구현하지 않았다.
+  enumOf(nightSequence, 'night_sequence', 'timeout_penalty', ['death'] as const)
   const dayVote = obj(root, 'day_vote')
   const nomination = obj(dayVote, 'nomination')
   const verdict = obj(dayVote, 'verdict')
@@ -240,7 +311,13 @@ export function parseRules(raw: unknown): RulesConfig {
     startHp: posInt(obj(root, 'character'), 'character', 'start_hp'),
     nightKill: {
       lethality: lethality(nightKill, 'night_kill', bool(nightKill, 'night_kill', 'instant_death'), 'damage'),
-      maySkip: bool(nightKill, 'night_kill', 'may_skip'),
+    },
+    nightSequence: {
+      timeLimitSeconds: posInt(nightSequence, 'night_sequence', 'time_limit_seconds'),
+      steps: nightSteps(nightSequence),
+    },
+    daySchedule: {
+      investigationSeconds: posInt(obj(root, 'day_schedule'), 'day_schedule', 'investigation_seconds'),
     },
     nomination: {
       tie: enumOf(nomination, 'day_vote.nomination', 'tie', ['no_nomination', 'random'] as const),

@@ -11,14 +11,21 @@ export type Faction = 'citizen' | 'mafia' | 'cult'
  * 교주팀 역할은 아직 설계되지 않았다 (DESIGN.md Q11). 폭탄마는 id 만 있고 능력이 없다 (Q12).
  * `citizen` 은 능력이 없는 게 확정 규칙이다 — 빈 자리가 아니다 (§5.3).
  */
-export type RoleId =
-  | 'citizen'
-  | 'police'
-  | 'doctor'
-  | 'mafia'
-  | 'bomber'
-  | 'sniper'
-  | 'cultleader'
+export const ROLE_IDS = [
+  'citizen',
+  'police',
+  'doctor',
+  'mafia',
+  'bomber',
+  'sniper',
+  'cultleader',
+] as const
+
+export type RoleId = (typeof ROLE_IDS)[number]
+
+export function isRoleId(value: unknown): value is RoleId {
+  return typeof value === 'string' && (ROLE_IDS as readonly string[]).includes(value)
+}
 
 /**
  * DESIGN.md §6 의 페이즈. `trial` 은 Q3 답(지목 → 변론 → 생사 투표)에서 나왔고,
@@ -52,7 +59,14 @@ export function isConvert(character: Character): boolean {
  * 사망 원인. 밤 살해와 처형은 HP 를 무시하고 죽이고(Q2·Q3),
  * `vote_damage` 는 변신 흡수 피해가 누적돼 HP 가 0 이 된 경우다 — 지금 HP 2 가 쓰이는 유일한 경로.
  */
-export type DeathCause = 'night_kill' | 'execution' | 'vote_damage' | 'collateral' | 'snipe'
+export type DeathCause =
+  | 'night_kill'
+  | 'execution'
+  | 'vote_damage'
+  | 'collateral'
+  | 'snipe'
+  /** 밤 호출에서 제한시간 안에 능력을 쓰지 않아 죽었다 (§6.1) */
+  | 'timeout'
 
 /**
  * 페이즈에서 실제로 벌어진 일. 표현층이 이걸 읽어 화면을 만든다.
@@ -62,7 +76,8 @@ export type DeathCause = 'night_kill' | 'execution' | 'vote_damage' | 'collatera
  */
 export type GameEvent =
   | { readonly kind: 'night_kill'; readonly actorId: string; readonly targetId: string }
-  | { readonly kind: 'night_skipped' }
+  /** 필수 밤 호출에 행동이 없었다 = 시간초과 (§6.1). 뒤따라 `died`(timeout) 가 온다 */
+  | { readonly kind: 'timed_out'; readonly stepId: string; readonly characterId: string }
   /** 폭탄마가 고른 후보 명단 (§5.2). 상처가 곧 공개 정보가 된다 */
   | {
       readonly kind: 'bomb'

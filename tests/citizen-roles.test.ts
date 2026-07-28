@@ -61,14 +61,16 @@ test('폭탄마도 마피아팀으로 나온다', () => {
 })
 
 test('검사는 살해 적용 전 상태를 본다 — 그 밤에 죽는 사람도 결과가 나온다 (🟡)', () => {
+  // 의사까지 행동시킨다 — 안 그러면 §6.1 시간초과로 의사가 죽어서 로그가 섞인다.
   const after = resolveNight(nightState(), RULES, {
     kill: { actorId: 'm1', targetId: 'c1' },
     investigations: [{ policeId: 'p1', targetId: 'c1' }],
+    protects: [{ doctorId: 'd1', targetId: 'c2' }],
   })
 
   assert.equal(after.log.find((e) => e.kind === 'investigated')?.result, 'not_mafia')
   assert.equal(isAlive(after, 'c1'), false)
-  assert.deepEqual(kinds(after), ['investigated', 'night_kill', 'died'])
+  assert.deepEqual(kinds(after), ['investigated', 'protected', 'night_kill', 'died'])
 })
 
 test('경찰만 검사하고, 죽은 경찰은 못 하고, 한 밤에 두 번은 못 한다', () => {
@@ -111,12 +113,13 @@ test('의사가 지킨 사람은 밤 살해를 맞아도 죽지 않는다 (확�
   const after = resolveNight(nightState(), RULES, {
     kill: { actorId: 'm1', targetId: 'c1' },
     protects: [{ doctorId: 'd1', targetId: 'c1' }],
+    investigations: [{ policeId: 'p1', targetId: 'm1' }],
   })
 
   assert.equal(isAlive(after, 'c1'), true)
   assert.equal(hpOf(after, 'c1'), 2, '보호는 피해를 0 으로 만든다 — HP 를 깎지 않는다')
   assert.equal(after.nightKillTarget, null, '아무도 죽지 않은 밤이다')
-  assert.deepEqual(kinds(after), ['protected', 'night_kill', 'kill_blocked'])
+  assert.deepEqual(kinds(after), ['investigated', 'protected', 'night_kill', 'kill_blocked'])
 })
 
 test('엉뚱한 사람을 지키면 살해는 그대로 성립한다', () => {
@@ -197,7 +200,16 @@ test('검사 → 보호 → 살해가 한 밤에 같이 해소된다', () => {
   assert.equal(after.phase, 'dawn')
 })
 
-test('일반 시민은 밤에 아무것도 하지 않는다 (확정 — 능력 없음)', () => {
-  const after = resolveNight(nightState(), RULES, { kill: null })
-  assert.deepEqual(kinds(after), ['night_skipped'])
+test('일반 시민은 밤에 호출되지 않으므로 시간초과로 죽지 않는다 (§6.1)', () => {
+  const state = stateOf(
+    [character('m1', 'mafia'), character('c1', 'citizen'), character('c2', 'citizen')],
+    'night',
+  )
+  const after = resolveNight(state, RULES, { kill: { actorId: 'm1', targetId: 'c1' } })
+
+  assert.equal(isAlive(after, 'c2'), true, '아무 능력도 안 썼지만 시민은 멀쩡하다')
+  assert.equal(
+    after.log.some((e) => e.kind === 'timed_out'),
+    false,
+  )
 })

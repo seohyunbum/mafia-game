@@ -84,6 +84,35 @@ test('모르는 규칙 값은 통과시키지 않는다', () => {
   assert.throws(() => parseRules(raw), /threshold/)
 })
 
+test('밤 호출 순서를 데이터에서 읽는다 (§6.1)', () => {
+  const rules = loadRules()
+
+  assert.equal(rules.nightSequence.timeLimitSeconds, 90)
+  assert.deepEqual(
+    rules.nightSequence.steps.map((s) => s.id),
+    ['mafia', 'sniper', 'police', 'doctor', 'cult'],
+  )
+  assert.equal(rules.daySchedule.investigationSeconds, 300)
+})
+
+test('밤 호출에 모르는 역할이 있으면 기동을 실패한다', () => {
+  const raw = rawRules()
+  raw['night_sequence']['steps'][0]['roles'] = ['mafia', 'wizard']
+  assert.throws(() => parseRules(raw), /모르는 역할/)
+})
+
+test('호출 id 가 중복이면 기동을 실패한다 — 시간초과 판정이 어긋난다', () => {
+  const raw = rawRules()
+  raw['night_sequence']['steps'][1]['id'] = 'mafia'
+  assert.throws(() => parseRules(raw), /중복이다/)
+})
+
+test('시간초과 페널티가 사망이 아닌 변형은 아직 없다', () => {
+  const raw = rawRules()
+  raw['night_sequence']['timeout_penalty'] = 'skip'
+  assert.throws(() => parseRules(raw), /timeout_penalty/)
+})
+
 test('schema_version 이 어긋나면 던진다 — 파서와 데이터는 같은 커밋에서 올린다', () => {
   const raw = rawRules()
   raw['schema_version'] = RULES_SCHEMA_VERSION + 1
