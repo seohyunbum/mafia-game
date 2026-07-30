@@ -11,17 +11,30 @@
     "name": "rolldown-runtime"
   },
   "app/MafiaGame.tsx": {
-    "file": "assets/MafiaGame-CCGq3v7K.js",
+    "file": "assets/MafiaGame-CZ1Vqdrx.js",
     "name": "MafiaGame",
     "src": "app/MafiaGame.tsx",
     "isDynamicEntry": true,
     "imports": [
       "_rolldown-runtime-S-ySWqyJ.js",
+      "virtual:vinext-app-browser-entry",
       "_framework-CXnKph_e.js"
+    ],
+    "dynamicImports": [
+      "node_modules/peerjs/dist/bundler.mjs"
+    ]
+  },
+  "node_modules/peerjs/dist/bundler.mjs": {
+    "file": "assets/bundler-DI71_n3b.js",
+    "name": "bundler",
+    "src": "node_modules/peerjs/dist/bundler.mjs",
+    "isDynamicEntry": true,
+    "imports": [
+      "_rolldown-runtime-S-ySWqyJ.js"
     ]
   },
   "node_modules/vinext/dist/shims/layout-segment-context.js": {
-    "file": "assets/layout-segment-context-yPkAaipE.js",
+    "file": "assets/layout-segment-context-CueSJQ_M.js",
     "name": "layout-segment-context",
     "src": "node_modules/vinext/dist/shims/layout-segment-context.js",
     "isDynamicEntry": true,
@@ -32,7 +45,7 @@
     ]
   },
   "virtual:vinext-app-browser-entry": {
-    "file": "assets/index-DAGuJIJu.js",
+    "file": "assets/index-m_U3NKQe.js",
     "name": "index",
     "src": "virtual:vinext-app-browser-entry",
     "isEntry": true,
