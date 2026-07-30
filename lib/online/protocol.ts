@@ -1,13 +1,14 @@
-import type {
-  Faction,
-  GameAction,
-  GameEvent,
-  Phase,
-  PlayerView,
-  RoleId,
-  TalkMessage,
-  Winner,
-} from "../game/types";
+/**
+ * 전송 규격. **페이로드 타입만 새 모델로 갈아끼웠다** — 방 코드·봉투(seq/actionId)·핑퐁·
+ * 재접속 유예 같은 전송 계층의 성숙한 부분은 그대로 쓴다.
+ *
+ * 바뀐 것은 둘이다.
+ *   - guest → host 의 intent 가 `FlowAction` (옛 `GameAction`)
+ *   - host → guest 의 view 가 `ViewModel` (옛 `PlayerView`)
+ */
+
+import type { FlowAction } from "../flow/types.ts";
+import { isViewModel, type ViewModel } from "../flow/viewModel.ts";
 
 export const PROTOCOL_VERSION = 1 as const;
 export const ROOM_CODE_LENGTH = 6;
@@ -17,31 +18,6 @@ export const JOIN_TIMEOUT_MS = 12_000;
 export const RECONNECT_GRACE_MS = 60_000;
 
 const ROOM_CODE_PATTERN = /^[A-HJ-NP-Z2-9]{6}$/;
-const PHASES = new Set<Phase>([
-  "role-reveal",
-  "night",
-  "dawn",
-  "morning",
-  "discussion",
-  "voting",
-  "dusk",
-  "ended",
-]);
-const FACTIONS = new Set<Faction>(["citizen", "mafia", "cult"]);
-const WINNERS = new Set<Winner>([
-  "citizen",
-  "mafia",
-  "cult",
-  "draw",
-]);
-const ROLES = new Set<RoleId>([
-  "citizen",
-  "mafia",
-  "bomber",
-  "cult_leader",
-  "cultist",
-]);
-
 export type RoomCode = string & { readonly __roomCode: unique symbol };
 
 export interface MessageEnvelope<K extends string> {
@@ -59,7 +35,7 @@ export interface JoinMessage extends MessageEnvelope<"join"> {
 }
 
 export interface IntentMessage extends MessageEnvelope<"intent"> {
-  action: GameAction;
+  action: FlowAction;
 }
 
 export interface PingMessage extends MessageEnvelope<"ping"> {
@@ -73,11 +49,15 @@ export interface PongMessage extends MessageEnvelope<"pong"> {
 export interface WelcomeMessage extends MessageEnvelope<"welcome"> {
   playerId: string;
   resumeToken: string;
-  view: PlayerView;
+  /**
+   * 접속 시점에 이미 시작된 방이면 첫 뷰가 실려 온다. 아직 시작 전이면 없다 —
+   * 그때 게스트는 "자리에 앉았고 방장의 시작을 기다리는" 상태다.
+   */
+  view?: ViewModel;
 }
 
 export interface SnapshotMessage extends MessageEnvelope<"snapshot"> {
-  view: PlayerView;
+  view: ViewModel;
   ackActionId?: string;
 }
 
@@ -168,138 +148,80 @@ function hasValidEnvelope(value: Record<string, unknown>): boolean {
   );
 }
 
-function isPhase(value: unknown): value is Phase {
-  return typeof value === "string" && PHASES.has(value as Phase);
-}
+const SESSION_EVENT_CODES = new Set<SessionEventCode>([
+  "guest-reconnecting",
+  "guest-reconnected",
+  "guest-replaced-by-ai",
+  "host-disconnected",
+  "game-ended",
+]);
 
-function isFaction(value: unknown): value is Faction {
-  return typeof value === "string" && FACTIONS.has(value as Faction);
-}
-
-function isWinner(value: unknown): value is Winner {
-  return typeof value === "string" && WINNERS.has(value as Winner);
-}
-
-function isRole(value: unknown): value is RoleId {
-  return typeof value === "string" && ROLES.has(value as RoleId);
-}
-
-function isTalkMessage(value: unknown): value is TalkMessage {
-  if (!isRecord(value)) return false;
-  return (
-    isNonEmptyString(value.id) &&
-    isSafeSequence(value.day) &&
-    (value.speakerId === null || isNonEmptyString(value.speakerId)) &&
-    typeof value.text === "string" &&
-    (value.kind === "speech" || value.kind === "system")
-  );
-}
-
-function isGameEvent(value: unknown): value is GameEvent {
-  if (!isRecord(value)) return false;
-  return (
-    isNonEmptyString(value.id) &&
-    isSafeSequence(value.day) &&
-    isPhase(value.phase) &&
-    typeof value.text === "string" &&
-    (value.visibility === "public" ||
-      value.visibility === "mafia" ||
-      value.visibility === "cult" ||
-      value.visibility === "host")
-  );
-}
-
-function isPublicCharacter(value: unknown): boolean {
-  if (!isRecord(value)) return false;
-  return (
-    isNonEmptyString(value.id) &&
-    isSafeSequence(value.seat) &&
-    isNonEmptyString(value.displayName, 80) &&
-    typeof value.avatar === "string" &&
-    typeof value.hp === "number" &&
-    Number.isFinite(value.hp) &&
-    typeof value.alive === "boolean" &&
-    typeof value.isDisguisedDouble === "boolean"
-  );
-}
-
-function isPrivateCharacterSummary(value: unknown): boolean {
-  if (!isRecord(value)) return false;
-  return (
-    isNonEmptyString(value.id) &&
-    isNonEmptyString(value.name, 80) &&
-    isRole(value.roleId) &&
-    isFaction(value.faction) &&
-    typeof value.alive === "boolean"
-  );
-}
-
-export function isPlayerView(value: unknown): value is PlayerView {
-  if (!isRecord(value)) return false;
-  return (
-    value.version === 1 &&
-    isSafeSequence(value.revision) &&
-    isNonEmptyString(value.playerId) &&
-    (value.partnerId === null || isNonEmptyString(value.partnerId)) &&
-    isSafeSequence(value.day) &&
-    isPhase(value.phase) &&
-    (value.mode === "solo" || value.mode === "duo") &&
-    Array.isArray(value.characters) &&
-    value.characters.every(isPublicCharacter) &&
-    isPrivateCharacterSummary(value.self) &&
-    typeof value.selfAbilityUsed === "boolean" &&
-    (value.partner === null || isPrivateCharacterSummary(value.partner)) &&
-    Array.isArray(value.messages) &&
-    value.messages.every(isTalkMessage) &&
-    Array.isArray(value.publicEvents) &&
-    value.publicEvents.every(isGameEvent) &&
-    (value.winner === null || isWinner(value.winner)) &&
-    isNullableString(value.winnerReason)
-  );
-}
-
-export function isGameAction(value: unknown): value is GameAction {
-  if (!isRecord(value) || !isNonEmptyString(value.actorId)) return false;
-
-  switch (value.type) {
-    case "advance":
-      return true;
-    case "night-kill":
-    case "vote":
-      return isNonEmptyString(value.targetId);
-    case "cult-convert":
-      return value.targetId === null || isNonEmptyString(value.targetId);
-    case "disguise":
-      return typeof value.use === "boolean";
-    case "talk":
-      return (
-        typeof value.text === "string" &&
-        value.text.length <= 1_000 &&
-        (value.targetId === undefined || isNonEmptyString(value.targetId))
-      );
-    default:
-      return false;
-  }
-}
+const REJECT_CODES = new Set<RejectCode>([
+  "room-full",
+  "invalid-message",
+  "protocol-mismatch",
+  "invalid-resume-token",
+  "session-ended",
+]);
 
 function isSessionEventCode(value: unknown): value is SessionEventCode {
-  return (
-    value === "guest-reconnecting" ||
-    value === "guest-reconnected" ||
-    value === "guest-replaced-by-ai" ||
-    value === "host-disconnected" ||
-    value === "game-ended"
-  );
+  return typeof value === "string" && SESSION_EVENT_CODES.has(value as SessionEventCode);
 }
 
 function isRejectCode(value: unknown): value is RejectCode {
-  return (
-    value === "room-full" ||
-    value === "invalid-message" ||
-    value === "protocol-mismatch" ||
-    value === "invalid-resume-token" ||
-    value === "session-ended"
-  );
+  return typeof value === "string" && REJECT_CODES.has(value as RejectCode);
+}
+
+const FLOW_ACTION_TYPES: readonly FlowAction["type"][] = [
+  "night-kill",
+  "night-bomb",
+  "investigate",
+  "protect",
+  "convert",
+  "listen",
+  "disguise",
+  "nominate",
+  "verdict",
+  "snipe",
+  "talk",
+];
+
+/**
+ * 전송받은 행동이 우리가 아는 모양인가.
+ *
+ * **정당성은 검사하지 않는다** — 그 대상을 고를 수 있는지는 규칙의 몫이고 호스트의
+ * `submit()` 이 판정한다. 여기서는 모양만 본다.
+ */
+export function isFlowAction(value: unknown): value is FlowAction {
+  if (!isRecord(value) || !isNonEmptyString(value.actorId)) return false;
+  if (typeof value.type !== "string") return false;
+  if (!FLOW_ACTION_TYPES.includes(value.type as FlowAction["type"])) return false;
+
+  switch (value.type as FlowAction["type"]) {
+    case "night-bomb":
+      return (
+        isNonEmptyString(value.targetId) &&
+        Array.isArray(value.candidates) &&
+        value.candidates.length > 0 &&
+        value.candidates.every((id) => isNonEmptyString(id))
+      );
+    case "night-kill":
+    case "investigate":
+    case "protect":
+    case "nominate":
+    case "snipe":
+      return isNonEmptyString(value.targetId);
+    case "convert":
+      return value.targetId === null || isNonEmptyString(value.targetId);
+    case "verdict":
+      return value.choice === "kill" || value.choice === "spare";
+    case "disguise":
+      return typeof value.use === "boolean";
+    case "talk":
+      return isNonEmptyString(value.text, 280);
+    case "listen":
+      return true;
+  }
 }
 
 export function isProtocolMessage(value: unknown): value is ProtocolMessage {
@@ -321,7 +243,7 @@ export function isProtocolMessage(value: unknown): value is ProtocolMessage {
       );
     }
     case "intent":
-      return isGameAction(value.action);
+      return isFlowAction(value.action);
     case "ping":
     case "pong":
       return isNonEmptyString(value.nonce, 128);
@@ -329,11 +251,11 @@ export function isProtocolMessage(value: unknown): value is ProtocolMessage {
       return (
         isNonEmptyString(value.playerId) &&
         isNonEmptyString(value.resumeToken, 128) &&
-        isPlayerView(value.view)
+        (value.view === undefined || isViewModel(value.view))
       );
     case "snapshot":
       return (
-        isPlayerView(value.view) &&
+        isViewModel(value.view) &&
         (value.ackActionId === undefined ||
           isNonEmptyString(value.ackActionId, 128))
       );

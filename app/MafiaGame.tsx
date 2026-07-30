@@ -1,41 +1,29 @@
 "use client";
 
 /**
- * 게임 화면. **규칙을 판정하지 않는다** — 판정은 `lib/rules`, 진행은 `lib/flow` 다.
+ * 게임 화면. **규칙을 판정하지 않고, 상태도 직접 읽지 않는다.**
  *
- * 화면이 하는 일은 셋뿐이다.
- *  1. `requirements()` 가 알려주는 "지금 내가 낼 것"을 그린다.
- *  2. `legalTargets()` 가 알려주는 "고를 수 있는 사람"만 누르게 한다.
- *  3. `advance()` 가 `{ok:false, blocked}` 를 주면 무엇이 비었는지 보여준다.
+ * 판정은 `lib/rules`, 진행은 `lib/flow`, 그리고 화면이 보는 것은 뷰모델 하나다
+ * (`lib/flow/viewModel`). 뷰모델을 만드는 쪽만 둘이다.
  *
- * 그래서 역할이 늘어도 이 파일에 분기가 늘지 않는다. 배포본은 역할마다 패널을 따로 두고
- * 진행 함수가 던지는 예외를 받을 데가 없어서, 화면이 조용히 멈추곤 했다.
+ *   - 솔로·호스트: 자기 `Session` 에서 만든다
+ *   - 온라인 게스트: 호스트가 보내 준 것을 그대로 받는다 (`Session` 이 없다)
+ *
+ * 그래서 이 파일에 "솔로냐 게스트냐" 분기가 거의 없다. 게스트가 누를 수 없는 것(진행)은
+ * 뷰모델의 `canAdvance` 가 이미 false 로 알려 준다.
  */
 
-import { useCallback, useMemo, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 
 import { getRules } from "@/lib/rules/browserRules";
 import type { Faction, RoleId } from "@/lib/rules/types";
 import { aiFiller, aiInterlude } from "@/lib/ai/brain";
-import {
-  advance,
-  blockingHumanRequirements,
-  characterOf,
-  createSession,
-  currentNightStep,
-  currentNightSteps,
-  displayNameOf,
-  legalSnipeTargets,
-  legalTargets,
-  nameOf,
-  requirements,
-  seatViews,
-  submit,
-  visibleFeed,
-  type SeatView,
-} from "@/lib/flow/session";
-import type { Requirement, Session } from "@/lib/flow/types";
-import { Landing, type LandingDialog } from "./Landing";
+import { advance, createSession, submit } from "@/lib/flow/session";
+import type { FlowAction, Requirement, Session } from "@/lib/flow/types";
+import { displayNameIn, toViewModel, type SeatView, type ViewModel } from "@/lib/flow/viewModel";
+import { normalizeRoomCode } from "@/lib/online/protocol";
+import { hostDuoRoom, joinDuoRoom, type DuoController, type DuoSnapshot } from "./duoSession";
+import { Landing, type LandingDialog, type OnlineStatus } from "./Landing";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 표시 문구
@@ -83,7 +71,8 @@ const ROLE_COPY: Record<RoleId, RoleCopy> = {
     factionName: "마피아 진영",
     symbol: "B",
     description: "조용히 죽이는 대신 터집니다. 정보를 내주고 판을 압박하세요.",
-    ability: "후보 3명을 고르고 그중 1명을 찍습니다. 찍힌 사람은 즉사, 나머지는 상처를 입습니다. 게임당 2회.",
+    ability:
+      "후보 3명을 고르고 그중 1명을 찍습니다. 찍힌 사람은 즉사, 나머지는 상처를 입습니다. 게임당 2회.",
   },
   sniper: {
     name: "스나이퍼",
@@ -175,13 +164,27 @@ const REQUIREMENT_COPY: Record<Requirement["kind"], { title: string; hint: strin
   verdict: { title: "생사 투표", hint: "피고를 죽일지 살릴지 정하세요.", verb: "" },
 };
 
+const TARGETING: readonly Requirement["kind"][] = [
+  "night-kill",
+  "night-bomb",
+  "investigate",
+  "protect",
+  "convert",
+  "nominate",
+];
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 화면
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function MafiaGame() {
   const rules = useMemo(() => getRules(), []);
+
+  // 솔로는 이 세션을 직접 갖는다. 온라인은 duo 컨트롤러가 대신 들고 있다.
   const [session, setSession] = useState<Session | null>(null);
+  const [duo, setDuo] = useState<DuoController | null>(null);
+  const [duoSnap, setDuoSnap] = useState<DuoSnapshot | null>(null);
+
   const [dialog, setDialog] = useState<LandingDialog>(null);
   const [playerName, setPlayerName] = useState("");
   const [roomCodeInput, setRoomCodeInput] = useState("");
@@ -192,35 +195,58 @@ export default function MafiaGame() {
   const [error, setError] = useState<string | null>(null);
   const [snipeMode, setSnipeMode] = useState(false);
 
-  const meId = session?.humanIds[0] ?? null;
+  // duo 컨트롤러의 변화를 화면으로 끌어온다
+  useEffect(() => {
+    if (!duo) return;
+    setDuoSnap(duo.snapshot());
+    return duo.subscribe(() => setDuoSnap(duo.snapshot()));
+  }, [duo]);
 
-  const startSolo = useCallback(
-    (name: string) => {
-      setSession(createSession({ mode: "solo", hostName: name }, rules));
-      setRevealed(false);
-      setPicked([]);
-      setTalk("");
-      setSnipeMode(false);
-      setError(null);
-      setDialog(null);
-    },
-    [rules],
-  );
+  const view: ViewModel | null = useMemo(() => {
+    if (duo) return duoSnap?.view ?? null;
+    if (!session) return null;
+    const meId = session.humanIds[0];
+    if (!meId) return null;
+    return toViewModel(session, rules, meId, { isHost: true, revision: 0 });
+  }, [duo, duoSnap, session, rules]);
 
-  const exitGame = useCallback(() => {
-    setSession(null);
+  const resetLocal = useCallback(() => {
     setRevealed(false);
     setPicked([]);
+    setTalk("");
     setSnipeMode(false);
     setError(null);
   }, []);
 
-  // 상태 갱신 함수 안에서 다른 setState 를 부르지 않는다 — 업데이터는 순수하게 두고,
-  // 부수 효과는 여기서 한 번만 일으킨다.
+  const startSolo = useCallback(
+    (name: string) => {
+      setDuo(null);
+      setDuoSnap(null);
+      setSession(createSession({ mode: "solo", hostName: name }, rules));
+      resetLocal();
+      setDialog(null);
+    },
+    [rules, resetLocal],
+  );
+
+  const exitGame = useCallback(() => {
+    duo?.close();
+    setDuo(null);
+    setDuoSnap(null);
+    setSession(null);
+    resetLocal();
+  }, [duo, resetLocal]);
+
+  /** 행동을 낸다. 솔로면 바로 규칙에 통과시키고, 온라인이면 호스트에게 올린다. */
   const act = useCallback(
-    (build: (current: Session) => Parameters<typeof submit>[2]) => {
+    (action: FlowAction) => {
+      if (duo) {
+        duo.submit(action);
+        setPicked([]);
+        return;
+      }
       if (!session) return;
-      const result = submit(session, rules, build(session));
+      const result = submit(session, rules, action);
       if (!result.ok) {
         setError(result.reason);
         return;
@@ -229,30 +255,70 @@ export default function MafiaGame() {
       setPicked([]);
       setSession(result.session);
     },
-    [rules, session],
+    [duo, session, rules],
   );
 
+  /** 진행. 호스트만 누를 수 있다 — 게스트는 버튼 자체가 없다. */
   const step = useCallback(() => {
+    if (duo) {
+      duo.advance();
+      setPicked([]);
+      setTalk("");
+      return;
+    }
     if (!session) return;
     const withAi = aiInterlude(session, rules);
     const result = advance(withAi, rules, aiFiller);
     if (!result.ok) {
-      setError(
-        result.blocked.length > 0
-          ? "아직 당신이 낼 행동이 남아 있습니다."
-          : "지금은 진행할 수 없습니다.",
-      );
+      setError("아직 당신이 낼 행동이 남아 있습니다.");
       setSession(withAi);
       return;
     }
     setError(null);
     setPicked([]);
     setTalk("");
-    // 낮으로 들어오면 AI 발언이 그 자리에서 쌓이도록 한 번 더 돌린다.
     setSession(aiInterlude(result.session, rules));
-  }, [rules, session]);
+  }, [duo, session, rules]);
 
-  if (!session || !meId) {
+  // ── 온라인 방 ──────────────────────────────────────────────────────────────
+
+  const createRoom = useCallback(async () => {
+    setError(null);
+    try {
+      const controller = await hostDuoRoom({ rules, hostName: playerName.trim() || "방장" });
+      setSession(null);
+      setDuo(controller);
+      resetLocal();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "방을 만들지 못했습니다.");
+    }
+  }, [rules, playerName, resetLocal]);
+
+  const joinRoom = useCallback(async () => {
+    setError(null);
+    const code = normalizeRoomCode(roomCodeInput);
+    if (code === null) {
+      setError("방 코드는 6자리입니다. 다시 확인해 주세요.");
+      return;
+    }
+    try {
+      const controller = await joinDuoRoom({
+        roomCode: code,
+        guestName: playerName.trim() || "친구",
+      });
+      setSession(null);
+      setDuo(controller);
+      resetLocal();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "방에 참가하지 못했습니다.");
+    }
+  }, [roomCodeInput, playerName, resetLocal]);
+
+  const duoStatus: OnlineStatus = mapStatus(duoSnap?.status ?? "idle");
+  const duoError = duoSnap?.error ?? null;
+
+  // 게임이 아직 없으면 표지·대기실
+  if (!view) {
     return (
       <Landing
         dialog={dialog}
@@ -262,49 +328,32 @@ export default function MafiaGame() {
         roomCodeInput={roomCodeInput}
         setRoomCodeInput={setRoomCodeInput}
         startLocalGame={startSolo}
-        createRoom={async () => {
-          setError("온라인 듀오는 새 진행 규칙에 맞춰 정비 중입니다. 솔로로 먼저 플레이해 주세요.");
-        }}
-        joinRoom={async () => {
-          setError("온라인 듀오는 새 진행 규칙에 맞춰 정비 중입니다. 솔로로 먼저 플레이해 주세요.");
-        }}
-        onlineSession={null}
-        onlineStatus="disconnected"
-        guestConnected={false}
-        onlineName=""
-        startOnlineGame={() => undefined}
-        error={error}
+        createRoom={createRoom}
+        joinRoom={joinRoom}
+        onlineSession={duoSnap ? { roomCode: duoSnap.roomCode, role: duoSnap.role } : null}
+        onlineStatus={duoStatus}
+        guestConnected={duoSnap?.partnerConnected ?? false}
+        onlineName={duoSnap?.partnerName ?? ""}
+        startOnlineGame={() => duo?.startGame()}
+        error={error ?? duoError}
         clearError={() => setError(null)}
-        resetOnline={() => undefined}
+        resetOnline={() => {
+          duo?.close();
+          setDuo(null);
+          setDuoSnap(null);
+        }}
       />
     );
   }
 
-  const me = characterOf(session, meId);
-  if (!me) return null;
-
-  const roleCopy = ROLE_COPY[me.roleId];
-  const phase = session.core.phase;
-  const phaseCopy = PHASE_COPY[phase] ?? PHASE_COPY["ended"]!;
-  const seats = seatViews(session, meId);
-  const feed = visibleFeed(session, meId);
-  const myRequirements = requirements(session, rules).filter((r) => r.actorId === meId);
-  const blocked = blockingHumanRequirements(session, rules);
-  const nightStep = currentNightStep(session, rules);
-  const nightStepCount = currentNightSteps(session, rules).length;
-  const snipeTargets = legalSnipeTargets(session, rules, meId);
-  const allies = session.core.characters.filter(
-    (c) => c.id !== meId && c.faction === me.faction && (me.faction === "mafia" || me.faction === "cult"),
-  );
+  const roleCopy = ROLE_COPY[view.self.roleId];
+  const phaseCopy = PHASE_COPY[view.phase] ?? PHASE_COPY["ended"]!;
 
   if (!revealed) {
-    return (
-      <RoleReveal
-        roleCopy={roleCopy}
-        onConfirm={() => setRevealed(true)}
-      />
-    );
+    return <RoleReveal roleCopy={roleCopy} onConfirm={() => setRevealed(true)} />;
   }
+
+  const shownError = error ?? duoError;
 
   return (
     <div className="app-shell">
@@ -314,19 +363,27 @@ export default function MafiaGame() {
             <span className="phase-icon">{phaseCopy.icon}</span>
             <div>
               <p className="eyebrow">
-                {session.core.day}일차 · {phaseCopy.title}
+                {view.day}일차 · {phaseCopy.title}
               </p>
               <strong>{phaseCopy.kicker}</strong>
             </div>
           </div>
-          <button type="button" className="quiet-button" onClick={exitGame}>
-            게임 나가기
-          </button>
+          <div className="header-note">
+            {view.mode === "duo" ? (
+              <span className="muted">
+                온라인 듀오 · {view.isHost ? "방장" : "참가자"}
+                {duoSnap?.roomCode ? ` · ${duoSnap.roomCode}` : ""}
+              </span>
+            ) : null}
+            <button type="button" className="quiet-button" onClick={exitGame}>
+              게임 나가기
+            </button>
+          </div>
         </header>
 
-        {error ? (
+        {shownError ? (
           <p className="error-banner" role="alert">
-            {error}
+            {shownError}
           </p>
         ) : null}
 
@@ -339,11 +396,11 @@ export default function MafiaGame() {
               </header>
               <p className="role-symbol">{roleCopy.symbol}</p>
               <strong>{roleCopy.name}</strong>
-              <p className="faction-label">{FACTION_NAME[me.faction]}</p>
+              <p className="faction-label">{FACTION_NAME[view.self.faction]}</p>
               <p>{roleCopy.ability}</p>
               <p className="muted">
-                체력 {me.hp} · {me.alive ? "생존" : "사망"}
-                {me.convertedAtDay !== null ? " · 사제(전향)" : ""}
+                체력 {view.self.hp} · {view.self.alive ? "생존" : "사망"}
+                {view.self.convertedAtDay !== null ? " · 사제(전향)" : ""}
               </p>
             </section>
 
@@ -351,13 +408,13 @@ export default function MafiaGame() {
               <header className="panel-header">
                 <span className="eyebrow">같은 편 정보</span>
               </header>
-              {allies.length === 0 ? (
+              {view.allies.length === 0 ? (
                 <p className="muted">확인된 동료가 없습니다. 누구도 쉽게 믿지 마세요.</p>
               ) : (
                 <ul className="log-list">
-                  {allies.map((ally) => (
+                  {view.allies.map((ally) => (
                     <li key={ally.id} className="log-entry">
-                      <span className="log-speaker">{nameOf(session, ally.id)}</span>
+                      <span className="log-speaker">{ally.name}</span>
                       <span>{ROLE_COPY[ally.roleId].name}</span>
                     </li>
                   ))}
@@ -373,33 +430,24 @@ export default function MafiaGame() {
             </header>
 
             <SeatRing
-              seats={seats}
+              seats={view.seats}
               picked={picked}
-              onPick={(id) => {
+              selectableIds={selectableIds(view, snipeMode)}
+              onPick={(id) =>
                 setPicked((current) =>
-                  current.includes(id)
-                    ? current.filter((x) => x !== id)
-                    : [...current, id],
-                );
-              }}
-              selectableIds={selectableIds(session, rules, meId, myRequirements, snipeMode, snipeTargets)}
+                  current.includes(id) ? current.filter((x) => x !== id) : [...current, id],
+                )
+              }
             />
 
             <ActionPanel
-              session={session}
-              meId={meId}
-              requirements={myRequirements}
-              nightStepPrompt={nightStep?.prompt ?? null}
-              nightStepIndex={session.nightStepIndex}
-              nightStepCount={nightStepCount}
+              view={view}
               picked={picked}
               setPicked={setPicked}
               talk={talk}
               setTalk={setTalk}
-              blocked={blocked}
               snipeMode={snipeMode}
               setSnipeMode={setSnipeMode}
-              snipeTargetIds={snipeTargets.map((c) => c.id)}
               onAct={act}
               onStep={step}
             />
@@ -432,27 +480,21 @@ export default function MafiaGame() {
             </div>
             <ul className="log-list">
               {tab === "talk"
-                ? session.messages
-                    .slice()
-                    .reverse()
-                    .map((message) => (
-                      <li key={message.id} className="log-entry">
-                        <span className="log-speaker">
-                          {message.speakerId ? displayNameOf(session, message.speakerId) : "기록"}
-                        </span>
-                        <span>{message.text}</span>
-                      </li>
-                    ))
-                : feed
-                    .slice()
-                    .reverse()
-                    .map((entry) => (
-                      <li key={entry.id} className="log-entry">
-                        <span className="log-speaker">{entry.day}일차</span>
-                        <span>{entry.text}</span>
-                      </li>
-                    ))}
-              {tab === "events" && feed.length === 0 ? (
+                ? [...view.messages].reverse().map((message) => (
+                    <li key={message.id} className="log-entry">
+                      <span className="log-speaker">
+                        {message.speakerId ? displayNameIn(view, message.speakerId) : "기록"}
+                      </span>
+                      <span>{message.text}</span>
+                    </li>
+                  ))
+                : [...view.feed].reverse().map((entry) => (
+                    <li key={entry.id} className="log-entry">
+                      <span className="log-speaker">{entry.day}일차</span>
+                      <span>{entry.text}</span>
+                    </li>
+                  ))}
+              {tab === "events" && view.feed.length === 0 ? (
                 <li className="empty-state">아직 공개된 사건이 없습니다.</li>
               ) : null}
             </ul>
@@ -460,10 +502,11 @@ export default function MafiaGame() {
         </div>
       </div>
 
-      {session.core.winner !== null || phase === "ended" ? (
+      {view.winner !== null || view.phase === "ended" ? (
         <WinnerDialog
-          winner={session.core.winner}
-          myFaction={me.faction}
+          winner={view.winner}
+          myFaction={view.self.faction}
+          canRestart={view.mode === "solo"}
           onRestart={() => startSolo(playerName || "방장")}
           onExit={exitGame}
         />
@@ -472,21 +515,32 @@ export default function MafiaGame() {
   );
 }
 
+/** 전송 계층의 상태 이름을 랜딩이 쓰는 말로 옮긴다. */
+function mapStatus(status: DuoSnapshot["status"]): OnlineStatus {
+  switch (status) {
+    case "opening":
+      return "opening";
+    case "waiting":
+      return "waiting";
+    case "connected":
+      return "connected";
+    case "reconnecting":
+      return "reconnecting";
+    case "guest-replaced":
+    case "host-disconnected":
+    case "closed":
+      return "closed";
+    default:
+      return "idle";
+  }
+}
+
 /** 지금 누를 수 있는 좌석. 규칙이 정한 합법 대상만 통과시킨다. */
-function selectableIds(
-  session: Session,
-  rules: ReturnType<typeof getRules>,
-  meId: string,
-  myRequirements: readonly Requirement[],
-  snipeMode: boolean,
-  snipeTargets: readonly { id: string }[],
-): string[] {
-  if (snipeMode) return snipeTargets.map((c) => c.id);
-  const targeting = myRequirements.find(
-    (r) => r.kind !== "listen" && r.kind !== "disguise" && r.kind !== "verdict",
-  );
+function selectableIds(view: ViewModel, snipeMode: boolean): readonly string[] {
+  if (snipeMode) return view.snipeTargetIds;
+  const targeting = view.myRequirements.find((r) => TARGETING.includes(r.kind));
   if (!targeting) return [];
-  return legalTargets(session, rules, meId, targeting.kind).map((c) => c.id);
+  return view.legalTargetIds[targeting.kind] ?? [];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -538,9 +592,7 @@ function SeatRing({
                 {seat.alive ? "♥".repeat(Math.max(0, seat.hp)) : "✕"}
               </span>
               {seat.duplicated ? <span className="muted">같은 얼굴 둘</span> : null}
-              {seat.knownRoleId ? (
-                <span className="muted">{ROLE_COPY[seat.knownRoleId].name}</span>
-              ) : null}
+              {seat.knownRoleId ? <span className="muted">{ROLE_COPY[seat.knownRoleId].name}</span> : null}
             </span>
           </button>
         );
@@ -554,53 +606,37 @@ function SeatRing({
 // ─────────────────────────────────────────────────────────────────────────────
 
 function ActionPanel({
-  session,
-  meId,
-  requirements: myRequirements,
-  nightStepPrompt,
-  nightStepIndex,
-  nightStepCount,
+  view,
   picked,
   setPicked,
   talk,
   setTalk,
-  blocked,
   snipeMode,
   setSnipeMode,
-  snipeTargetIds,
   onAct,
   onStep,
 }: {
-  session: Session;
-  meId: string;
-  requirements: readonly Requirement[];
-  nightStepPrompt: string | null;
-  nightStepIndex: number;
-  nightStepCount: number;
+  view: ViewModel;
   picked: readonly string[];
   setPicked: (ids: string[]) => void;
   talk: string;
   setTalk: (value: string) => void;
-  blocked: readonly Requirement[];
   snipeMode: boolean;
   setSnipeMode: (value: boolean) => void;
-  snipeTargetIds: readonly string[];
-  onAct: (build: (current: Session) => Parameters<typeof submit>[2]) => void;
+  onAct: (action: FlowAction) => void;
   onStep: () => void;
 }) {
-  const rules = getRules();
-  const phase = session.core.phase;
-  const mine = myRequirements[0] ?? null;
-  const canStep = blocked.length === 0;
-  const nomineeId = session.core.nominee;
+  const me = view.viewerId;
+  const mine = view.myRequirements[0] ?? null;
+  const waitingForHost = !view.isHost && view.myRequirements.length === 0;
 
   return (
     <div className="action-panel">
-      {phase === "night" && nightStepPrompt ? (
+      {view.phase === "night" && view.nightStepPrompt ? (
         <div className="night-call">
-          <strong>“{nightStepPrompt}”</strong>
+          <strong>“{view.nightStepPrompt}”</strong>
           <span className="night-call-meta">
-            사회자 호출 {nightStepIndex + 1} / {nightStepCount}
+            사회자 호출 {view.nightStepIndex + 1} / {view.nightStepCount}
           </span>
         </div>
       ) : null}
@@ -613,11 +649,13 @@ function ActionPanel({
           </>
         ) : (
           <>
-            <span className="eyebrow">{phase === "night" ? "다른 직업의 차례" : "진행"}</span>
+            <span className="eyebrow">{view.phase === "night" ? "다른 직업의 차례" : "진행"}</span>
             <p className="action-hint">
-              {phase === "night"
-                ? "당신은 이 호출의 대상이 아닙니다. 다음 호출로 넘기세요."
-                : "낼 행동이 없습니다. 다음 단계로 넘기세요."}
+              {waitingForHost
+                ? "낼 행동이 없습니다. 방장이 다음 단계로 넘길 때까지 기다리세요."
+                : view.phase === "night"
+                  ? "당신은 이 호출의 대상이 아닙니다. 다음 호출로 넘기세요."
+                  : "낼 행동이 없습니다. 다음 단계로 넘기세요."}
             </p>
           </>
         )}
@@ -626,9 +664,9 @@ function ActionPanel({
           <button
             type="button"
             className="primary-button"
-            onClick={() => onAct(() => ({ type: "listen", actorId: meId }))}
+            onClick={() => onAct({ type: "listen", actorId: me })}
           >
-            문에 귀를 기울인다 — 오늘 밤 호출 {nightStepCount}개
+            문에 귀를 기울인다 — 오늘 밤 호출 {view.nightStepCount}개
           </button>
         ) : null}
 
@@ -637,46 +675,45 @@ function ActionPanel({
             <button
               type="button"
               className="primary-button"
-              onClick={() => onAct(() => ({ type: "disguise", actorId: meId, use: true }))}
+              onClick={() => onAct({ type: "disguise", actorId: me, use: true })}
             >
               변신한다
             </button>
             <button
               type="button"
               className="secondary-button"
-              onClick={() => onAct(() => ({ type: "disguise", actorId: meId, use: false }))}
+              onClick={() => onAct({ type: "disguise", actorId: me, use: false })}
             >
               오늘은 그대로 있는다
             </button>
           </div>
         ) : null}
 
-        {mine?.kind === "verdict" && nomineeId ? (
+        {mine?.kind === "verdict" && view.nomineeId ? (
           <div className="action-buttons">
             <p className="action-hint">
-              피고 — <strong>{displayNameOf(session, nomineeId)}</strong>
+              피고 — <strong>{displayNameIn(view, view.nomineeId)}</strong>
             </p>
             <button
               type="button"
               className="danger-button"
-              onClick={() => onAct(() => ({ type: "verdict", actorId: meId, choice: "kill" }))}
+              onClick={() => onAct({ type: "verdict", actorId: me, choice: "kill" })}
             >
               죽인다
             </button>
             <button
               type="button"
               className="secondary-button"
-              onClick={() => onAct(() => ({ type: "verdict", actorId: meId, choice: "spare" }))}
+              onClick={() => onAct({ type: "verdict", actorId: me, choice: "spare" })}
             >
               살린다
             </button>
           </div>
         ) : null}
 
-        {mine && isTargeting(mine.kind) ? (
+        {mine && TARGETING.includes(mine.kind) ? (
           <TargetSubmit
-            session={session}
-            meId={meId}
+            view={view}
             requirement={mine}
             picked={picked}
             setPicked={setPicked}
@@ -684,7 +721,7 @@ function ActionPanel({
           />
         ) : null}
 
-        {phase === "day" ? (
+        {view.phase === "day" ? (
           <>
             <div className="action-divider" />
             <label className="field">
@@ -701,7 +738,7 @@ function ActionPanel({
               type="button"
               className="secondary-button"
               disabled={talk.trim().length === 0}
-              onClick={() => onAct(() => ({ type: "talk", actorId: meId, text: talk }))}
+              onClick={() => onAct({ type: "talk", actorId: me, text: talk })}
             >
               발언하기
             </button>
@@ -710,33 +747,42 @@ function ActionPanel({
 
         <div className="action-divider" />
 
-        {blocked.length > 0 ? (
+        {view.blockingKinds.length > 0 ? (
           <ul className="blocked-list">
-            {blocked.map((item) => (
-              <li key={`${item.actorId}-${item.kind}`}>
-                아직 {REQUIREMENT_COPY[item.kind].title}을(를) 내지 않았습니다.
-              </li>
+            {[...new Set(view.blockingKinds)].map((kind) => (
+              <li key={kind}>아직 남은 제출 — {REQUIREMENT_COPY[kind].title}</li>
             ))}
           </ul>
         ) : null}
 
-        <button type="button" className="primary-button" disabled={!canStep} onClick={onStep}>
-          {phase === "night" && nightStepIndex + 1 < nightStepCount ? "다음 호출로" : "다음 단계로"}
-        </button>
+        {view.isHost ? (
+          <button
+            type="button"
+            className="primary-button"
+            disabled={!view.canAdvance}
+            onClick={onStep}
+          >
+            {view.phase === "night" && view.nightStepIndex + 1 < view.nightStepCount
+              ? "다음 호출로"
+              : "다음 단계로"}
+          </button>
+        ) : (
+          <p className="action-hint muted">진행은 방장이 넘깁니다.</p>
+        )}
       </div>
 
-      {snipeTargetIds.length > 0 ? (
+      {view.snipeTargetIds.length > 0 ? (
         <div className="snipe-float">
           {snipeMode ? (
             <div className="action-buttons">
               <button
                 type="button"
                 className="danger-button"
-                disabled={picked.length !== 1 || !snipeTargetIds.includes(picked[0] as string)}
+                disabled={picked.length !== 1 || !view.snipeTargetIds.includes(picked[0] as string)}
                 onClick={() => {
                   const target = picked[0];
                   if (!target) return;
-                  onAct(() => ({ type: "snipe", actorId: meId, targetId: target }));
+                  onAct({ type: "snipe", actorId: me, targetId: target });
                   setSnipeMode(false);
                 }}
               >
@@ -755,7 +801,7 @@ function ActionPanel({
                 setSnipeMode(true);
               }}
             >
-              저격 (남은 탄 {(rules.sniper.usesPerGame ?? 1) - (session.core.abilityUses[meId] ?? 0)})
+              저격 (남은 탄 {view.snipeShotsLeft})
             </button>
           )}
         </div>
@@ -764,34 +810,45 @@ function ActionPanel({
   );
 }
 
-function isTargeting(kind: Requirement["kind"]): boolean {
-  return kind !== "listen" && kind !== "disguise" && kind !== "verdict";
-}
-
 /** 대상을 고르는 제출. 폭탄만 여러 명(후보)을 받는다. */
 function TargetSubmit({
-  session,
-  meId,
+  view,
   requirement,
   picked,
   setPicked,
   onAct,
 }: {
-  session: Session;
-  meId: string;
+  view: ViewModel;
   requirement: Requirement;
   picked: readonly string[];
   setPicked: (ids: string[]) => void;
-  onAct: (build: (current: Session) => Parameters<typeof submit>[2]) => void;
+  onAct: (action: FlowAction) => void;
 }) {
-  const rules = getRules();
-  const pool = legalTargets(session, rules, meId, requirement.kind);
+  const me = view.viewerId;
+  const pool = view.legalTargetIds[requirement.kind] ?? [];
   const isBomb = requirement.kind === "night-bomb";
-  const needed = isBomb ? Math.min(rules.bomber.candidateCount, pool.length) : 1;
+  const needed = isBomb ? Math.min(3, pool.length) : 1;
 
   if (pool.length === 0) {
     return <p className="action-hint">고를 수 있는 대상이 없습니다. 그대로 넘기세요.</p>;
   }
+
+  const single = (targetId: string): FlowAction | null => {
+    switch (requirement.kind) {
+      case "night-kill":
+        return { type: "night-kill", actorId: me, targetId };
+      case "investigate":
+        return { type: "investigate", actorId: me, targetId };
+      case "protect":
+        return { type: "protect", actorId: me, targetId };
+      case "convert":
+        return { type: "convert", actorId: me, targetId };
+      case "nominate":
+        return { type: "nominate", actorId: me, targetId };
+      default:
+        return null;
+    }
+  };
 
   return (
     <>
@@ -800,7 +857,7 @@ function TargetSubmit({
         <span>
           {picked.length === 0
             ? "선택하지 않음"
-            : picked.map((id) => displayNameOf(session, id)).join(" · ")}
+            : picked.map((id) => displayNameIn(view, id)).join(" · ")}
         </span>
       </div>
 
@@ -814,15 +871,10 @@ function TargetSubmit({
                   type="button"
                   className="quiet-button"
                   onClick={() =>
-                    onAct(() => ({
-                      type: "night-bomb",
-                      actorId: meId,
-                      targetId: id,
-                      candidates: [...picked],
-                    }))
+                    onAct({ type: "night-bomb", actorId: me, targetId: id, candidates: [...picked] })
                   }
                 >
-                  {displayNameOf(session, id)} 찍기
+                  {displayNameIn(view, id)} 찍기
                 </button>
               </li>
             ))}
@@ -838,17 +890,8 @@ function TargetSubmit({
           onClick={() => {
             const target = picked[0];
             if (!target) return;
-            if (requirement.kind === "night-kill") {
-              onAct(() => ({ type: "night-kill", actorId: meId, targetId: target }));
-            } else if (requirement.kind === "investigate") {
-              onAct(() => ({ type: "investigate", actorId: meId, targetId: target }));
-            } else if (requirement.kind === "protect") {
-              onAct(() => ({ type: "protect", actorId: meId, targetId: target }));
-            } else if (requirement.kind === "convert") {
-              onAct(() => ({ type: "convert", actorId: meId, targetId: target }));
-            } else if (requirement.kind === "nominate") {
-              onAct(() => ({ type: "nominate", actorId: meId, targetId: target }));
-            }
+            const action = single(target);
+            if (action) onAct(action);
           }}
         >
           {REQUIREMENT_COPY[requirement.kind].verb}
@@ -893,11 +936,13 @@ function RoleReveal({ roleCopy, onConfirm }: { roleCopy: RoleCopy; onConfirm: ()
 function WinnerDialog({
   winner,
   myFaction,
+  canRestart,
   onRestart,
   onExit,
 }: {
   winner: Faction | null;
   myFaction: Faction;
+  canRestart: boolean;
   onRestart: () => void;
   onExit: () => void;
 }) {
@@ -916,9 +961,11 @@ function WinnerDialog({
               : "당신의 진영은 패배했습니다."}
         </p>
         <div className="modal-actions">
-          <button type="button" className="primary-button" onClick={onRestart}>
-            다시 하기
-          </button>
+          {canRestart ? (
+            <button type="button" className="primary-button" onClick={onRestart}>
+              다시 하기
+            </button>
+          ) : null}
           <button type="button" className="quiet-button" onClick={onExit}>
             표지로
           </button>

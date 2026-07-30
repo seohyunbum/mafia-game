@@ -6,7 +6,21 @@
  */
 
 import type { FormEvent } from "react";
-import type { OnlineGameSession, OnlineStatus } from "./onlineAdapter";
+/**
+ * 랜딩이 아는 온라인 정보는 이 둘뿐이다 — 전송 세부(PeerJS·봉투·재접속)는 `duoSession` 이
+ * 감춘다. 상태 이름도 랜딩이 쓰는 말로만 좁혔다.
+ */
+export type OnlineStatus =
+  | "idle"
+  | "opening"
+  | "waiting"
+  | "connected"
+  | "reconnecting"
+  | "closed";
+export interface OnlineGameSession {
+  readonly roomCode: string;
+  readonly role: "host" | "guest";
+}
 
 export type LandingDialog = "solo" | "online" | "create" | "join" | "rules" | null;
 
@@ -304,13 +318,13 @@ export function Landing({
                 <button
                   className="primary-button"
                   type="button"
-                  disabled={onlineStatus === "connecting"}
+                  disabled={onlineStatus === "opening"}
                   onClick={() => {
                     if (dialog === "create") void createRoom();
                     else void joinRoom();
                   }}
                 >
-                  {onlineStatus === "connecting"
+                  {onlineStatus === "opening"
                     ? "연결 준비 중…"
                     : dialog === "create"
                       ? "방 코드 만들기"
@@ -332,13 +346,13 @@ export function Landing({
                 </div>
                 <div className="connection-status" aria-live="polite">
                   {!guestConnected && <span className="spinner" />}
-                  {guestConnected
-                    ? `${onlineName || "참가자"} 님이 원탁에 앉았습니다.`
-                    : onlineSession.role === "host"
-                      ? "참가자를 기다리는 중…"
-                      : onlineStatus === "connected"
-                        ? "방장의 게임 시작을 기다리는 중…"
-                        : "방장에게 연결 중…"}
+                  {onlineSession.role === "host"
+                    ? guestConnected
+                      ? `${onlineName || "참가자"} 님이 원탁에 앉았습니다.`
+                      : "참가자를 기다리는 중…"
+                    : onlineStatus === "connected"
+                      ? "방장과 연결되었습니다. 게임 시작을 기다리는 중…"
+                      : "방장에게 연결 중…"}
                 </div>
                 {onlineSession.role === "host" && (
                   <button

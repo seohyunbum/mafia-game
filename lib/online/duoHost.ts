@@ -13,14 +13,21 @@ import { aiFiller, aiInterlude } from "../ai/brain.ts";
 import { advance, createSession, isOver, submit } from "../flow/session.ts";
 import type { FlowAction, Session } from "../flow/types.ts";
 import { toViewModel, type ViewModel } from "../flow/viewModel.ts";
-import type { HostToGuest } from "./duoProtocol.ts";
+/**
+ * 호스트가 게스트에게 알리는 것. **전송 규격이 아니라 도메인 사건**이다 —
+ * 봉투(seq·actionId)를 씌우는 일은 어댑터가 한다. 그래서 이 파일은 전송을 모른다.
+ */
+export type HostOutbound =
+  | { readonly kind: "welcome"; readonly playerId: string; readonly hostName: string }
+  | { readonly kind: "snapshot"; readonly view: ViewModel }
+  | { readonly kind: "reject"; readonly detail: string };
 
 export interface DuoHostOptions {
   readonly rules: RulesConfig;
   readonly hostName: string;
   readonly seed?: number;
   /** 게스트에게 메시지를 보내는 통로. 전송 방식은 호출자가 정한다 */
-  readonly send: (message: HostToGuest) => void;
+  readonly send: (message: HostOutbound) => void;
 }
 
 export interface DuoHostState {
@@ -37,7 +44,7 @@ export class DuoHost {
   private readonly rules: RulesConfig;
   private readonly hostName: string;
   private readonly seed: number | undefined;
-  private readonly send: (message: HostToGuest) => void;
+  private readonly send: (message: HostOutbound) => void;
 
   private session: Session | null = null;
   private guestName: string | null = null;
@@ -61,12 +68,7 @@ export class DuoHost {
   /** 게스트가 붙었다. 아직 게임을 시작하지는 않는다 — 시작은 호스트가 누른다. */
   onGuestJoin(name: string): void {
     this.guestName = name.trim().slice(0, 20) || "친구";
-    this.send({
-      t: "welcome",
-      v: 2,
-      playerId: GUEST_SEAT_ID,
-      hostName: this.hostName,
-    });
+    this.send({ kind: "welcome", playerId: GUEST_SEAT_ID, hostName: this.hostName });
     if (this.session) this.broadcast();
   }
 
@@ -102,7 +104,7 @@ export class DuoHost {
     }
     const result = submit(this.session, this.rules, action);
     if (!result.ok) {
-      this.send({ t: "reject", v: 2, reason: result.reason });
+      this.send({ kind: "reject", detail: result.reason });
       return { ok: false, reason: result.reason };
     }
     this.session = result.session;
@@ -158,6 +160,6 @@ export class DuoHost {
   private broadcast(): void {
     if (!this.session || this.guestName === null) return;
     const view = this.viewFor(GUEST_SEAT_ID);
-    if (view) this.send({ t: "view", v: 2, view });
+    if (view) this.send({ kind: "snapshot", view });
   }
 }

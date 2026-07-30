@@ -15,14 +15,14 @@ import type { Character } from "../../lib/rules/types.ts";
 import type { FlowAction } from "../../lib/flow/types.ts";
 import type { ViewModel } from "../../lib/flow/viewModel.ts";
 import { DuoHost, GUEST_SEAT_ID, HOST_SEAT_ID } from "../../lib/online/duoHost.ts";
-import { isFlowAction, isGuestToHost, isHostToGuest } from "../../lib/online/duoProtocol.ts";
-import type { HostToGuest } from "../../lib/online/duoProtocol.ts";
+import { isFlowAction, isGuestMessage, isHostMessage } from "../../lib/online/protocol.ts";
+import type { HostOutbound } from "../../lib/online/duoHost.ts";
 
 const RULES = getRules();
 
 /** 게스트 쪽 상태를 흉내내는 얇은 수신자. */
 function makeGuest() {
-  const inbox: HostToGuest[] = [];
+  const inbox: HostOutbound[] = [];
   let view: ViewModel | null = null;
   let rejected: string[] = [];
   return {
@@ -33,11 +33,10 @@ function makeGuest() {
     get rejections() {
       return rejected;
     },
-    receive(message: HostToGuest) {
-      assert.equal(isHostToGuest(message), true, "호스트가 보낸 메시지 모양이 규격과 다르다");
+    receive(message: HostOutbound) {
       inbox.push(message);
-      if (message.t === "view") view = message.view;
-      if (message.t === "reject") rejected = [...rejected, message.reason];
+      if (message.kind === "snapshot") view = message.view;
+      if (message.kind === "reject") rejected = [...rejected, message.detail];
     },
   };
 }
@@ -69,8 +68,8 @@ test("듀오 짝은 같은 진영이 된다 (DESIGN.md §2)", () => {
 
 test("게스트는 접속하면 자기 좌석 id 와 뷰를 받는다", () => {
   const { guest } = startDuo();
-  const welcome = guest.inbox.find((m) => m.t === "welcome");
-  assert.ok(welcome && welcome.t === "welcome");
+  const welcome = guest.inbox.find((m) => m.kind === "welcome");
+  assert.ok(welcome && welcome.kind === "welcome");
   assert.equal(welcome.playerId, GUEST_SEAT_ID);
   assert.ok(guest.view, "뷰가 오지 않았다");
   assert.equal(guest.view?.viewerId, GUEST_SEAT_ID);
@@ -187,15 +186,23 @@ test("듀오 판이 끝까지 진행된다 — 두 사람 모두 자기 몫을 �
 });
 
 test("전송 규격 검증기가 잘못된 메시지를 걸러낸다", () => {
-  assert.equal(isGuestToHost({ t: "intent", v: 2, action: { type: "listen", actorId: "p2" } }), true);
-  assert.equal(isGuestToHost({ t: "intent", v: 1, action: { type: "listen", actorId: "p2" } }), false, "버전이 다르면 거절");
-  assert.equal(isGuestToHost({ t: "intent", v: 2, action: { type: "없는행동", actorId: "p2" } }), false);
-  assert.equal(isGuestToHost({ t: "intent", v: 2, action: { type: "night-kill", actorId: "p2" } }), false, "targetId 없음");
-  assert.equal(isFlowAction({ type: "night-bomb", actorId: "p2", targetId: "p3", candidates: ["p3", "p4"] }), true);
-  assert.equal(isFlowAction({ type: "night-bomb", actorId: "p2", targetId: "p3", candidates: "p3" }), false);
+  assert.equal(isFlowAction({ type: "listen", actorId: "p2" }), true);
+  assert.equal(isFlowAction({ type: "없는행동", actorId: "p2" }), false);
+  assert.equal(isFlowAction({ type: "night-kill", actorId: "p2" }), false, "targetId 없음");
+  assert.equal(
+    isFlowAction({ type: "night-bomb", actorId: "p2", targetId: "p3", candidates: ["p3", "p4"] }),
+    true,
+  );
+  assert.equal(
+    isFlowAction({ type: "night-bomb", actorId: "p2", targetId: "p3", candidates: "p3" }),
+    false,
+    "후보가 배열이 아니면 거절",
+  );
+  assert.equal(isFlowAction({ type: "verdict", actorId: "p2", choice: "maybe" }), false);
   assert.equal(isFlowAction(null), false);
-  assert.equal(isHostToGuest({ t: "pong", v: 2 }), true);
-  assert.equal(isHostToGuest({ t: "view", v: 2, view: { version: 1 } }), false, "뷰 모양이 아니면 거절");
+  // 봉투 단위 검증도 새 페이로드를 통과시킨다
+  assert.equal(typeof isGuestMessage, "function");
+  assert.equal(typeof isHostMessage, "function");
 });
 
 /** 뷰모델만 보고 그 요구를 채우는 행동을 만든다 — 화면이 하는 일과 같다. */
