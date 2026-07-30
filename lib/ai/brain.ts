@@ -135,16 +135,33 @@ function rankTargets(
     .map(({ candidate }) => candidate);
 }
 
-/** 공개 정보로 결백에 가까운 사람 = 마피아팀이 죽이고 싶은 사람. */
-function trustRank(session: Session, evidence: Evidence, candidates: readonly Character[]): Character[] {
-  return [...candidates].sort((a, b) => {
-    const trust = (c: Character): number =>
-      (evidence.publicClear.has(c.id) ? 3 : 0) +
-      (evidence.provenNotMafia.has(c.id) ? 2 : 0) +
-      (evidence.duplicatedNames.has(displayNameOf(session, c.id)) ? -1 : 0) +
-      (c.hp === 2 ? 1 : 0);
-    return trust(b) - trust(a);
-  });
+/**
+ * 공개 정보로 결백에 가까운 사람 = 마피아팀이 죽이고 싶은 사람.
+ *
+ * **동점은 반드시 흔든다.** 안정 정렬은 키가 같으면 원래 순서를 유지하는데, 그 순서는
+ * 좌석 순서이고 사람은 항상 1번 좌석이다. 증거가 없는 초반에는 모두 동점이므로, 흔들지
+ * 않으면 표적이 늘 앞 좌석에 몰린다 — 측정에서 전체 사망자가 좌석 2·3·4 에 15~16% 씩
+ * 몰리고 8번 좌석은 2.4% 였다(균등이면 8.3%). 사람이 구조적으로 초반 표적이 되는 것이다.
+ *
+ * jitter 는 1 보다 작게 둔다. 실제 증거(3·2·1점)는 흔들림을 이기고, 동점만 갈린다.
+ */
+function trustRank(
+  session: Session,
+  evidence: Evidence,
+  candidates: readonly Character[],
+  rng: () => number,
+): Character[] {
+  return [...candidates]
+    .map((candidate) => {
+      const trust =
+        (evidence.publicClear.has(candidate.id) ? 3 : 0) +
+        (evidence.provenNotMafia.has(candidate.id) ? 2 : 0) +
+        (evidence.duplicatedNames.has(displayNameOf(session, candidate.id)) ? -1 : 0) +
+        (candidate.hp === 2 ? 1 : 0);
+      return { candidate, score: trust + rng() * 0.9 };
+    })
+    .sort((a, b) => b.score - a.score)
+    .map(({ candidate }) => candidate);
 }
 
 /**
@@ -192,7 +209,7 @@ export function fillRequirement(session: Session, rules: RulesConfig, requiremen
 
     case "night-kill": {
       const pool = legalTargets(working, rules, actor.id, "night-kill");
-      const target = pickAmongTop(trustRank(working, evidence, pool), rng) ?? pickWith(pool, rng);
+      const target = pickAmongTop(trustRank(working, evidence, pool, rng), rng) ?? pickWith(pool, rng);
       if (!target) return working;
       return apply(working, rules, { type: "night-kill", actorId: actor.id, targetId: target.id });
     }
@@ -201,7 +218,7 @@ export function fillRequirement(session: Session, rules: RulesConfig, requiremen
       const pool = legalTargets(working, rules, actor.id, "night-bomb");
       const count = Math.min(rules.bomber.candidateCount, pool.length);
       if (count === 0) return working;
-      const ordered = trustRank(working, evidence, pool);
+      const ordered = trustRank(working, evidence, pool, rng);
       const candidates = ordered.slice(0, count).map((c) => c.id);
       const targetId = candidates[Math.min(candidates.length - 1, Math.floor(rng() * candidates.length))];
       if (targetId === undefined) return working;
@@ -222,7 +239,7 @@ export function fillRequirement(session: Session, rules: RulesConfig, requiremen
     case "protect": {
       const pool = legalTargets(working, rules, actor.id, "protect");
       // 마피아팀이 노릴 만한 사람 = 공개적으로 결백해 보이는 사람. 없으면 자기를 지킨다.
-      const ordered = trustRank(working, evidence, pool.filter((c) => c.id !== actor.id));
+      const ordered = trustRank(working, evidence, pool.filter((c) => c.id !== actor.id), rng);
       const target = pickAmongTop(ordered, rng) ?? pool.find((c) => c.id === actor.id) ?? pickWith(pool, rng);
       if (!target) return working;
       return apply(working, rules, { type: "protect", actorId: actor.id, targetId: target.id });
@@ -232,7 +249,9 @@ export function fillRequirement(session: Session, rules: RulesConfig, requiremen
       const pool = legalTargets(working, rules, actor.id, "convert");
       // 시민을 먼저 전향시킨다 — 마피아팀은 계속 남을 죽여 승리 조건을 채워 준다 (§5.4 Q28).
       const citizens = pool.filter((c) => c.faction === "citizen");
-      const target = trustRank(working, evidence, citizens.length > 0 ? citizens : pool)[0] ?? pickWith(pool, rng);
+      const target =
+        pickAmongTop(trustRank(working, evidence, citizens.length > 0 ? citizens : pool, rng), rng) ??
+        pickWith(pool, rng);
       if (!target) return working;
       return apply(working, rules, { type: "convert", actorId: actor.id, targetId: target.id });
     }
@@ -324,7 +343,7 @@ export function maybeSnipe(session: Session, rules: RulesConfig): Session {
     if (!winsNow && !endgame) continue;
 
     const evidence = gatherEvidence(working);
-    const target = trustRank(working, evidence, targets)[0];
+    const target = trustRank(working, evidence, targets, () => roll(working))[0];
     if (!target) continue;
     working = apply(working, rules, { type: "snipe", actorId: sniper.id, targetId: target.id });
   }

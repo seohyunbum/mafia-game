@@ -60,6 +60,9 @@ export function playOut(seed: number, composition: readonly RoleId[] = STANDARD_
     steps += 1;
     const nightBefore = session.core.phase === "night";
     session = aiInterlude(session, RULES);
+    // 저격은 페이즈 밖 행동이라 여기서 승부가 날 수 있다 (§5.5). 그러면 advance 가
+    // 정당하게 거부하므로, 그걸 '막힘' 으로 세지 않도록 먼저 확인한다.
+    if (isOver(session)) break;
     const result = advance(session, RULES, aiFiller);
     if (!result.ok) {
       stuck = true;

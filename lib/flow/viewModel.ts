@@ -86,6 +86,8 @@ export interface ViewModel {
   readonly canAdvance: boolean;
   /** 이 뷰어가 진행 권한을 갖는가 */
   readonly isHost: boolean;
+  /** 죽어서 모든 정체가 보이는 상태인가 (관전) */
+  readonly spectating: boolean;
 }
 
 const TARGETING_KINDS: readonly Requirement["kind"][] = [
@@ -182,6 +184,7 @@ export function toViewModel(
     blockingKinds: blocking.map((r) => r.kind),
     canAdvance: options.isHost && blocking.length === 0,
     isHost: options.isHost,
+    spectating: !character.alive,
   };
 }
 

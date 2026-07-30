@@ -100,6 +100,14 @@ function win(next: GameState, faction: Faction): void {
 function checkVictory(next: GameState, rules: RulesConfig): void {
   if (next.winner !== null) return
 
+  // 아무도 살아남지 않았으면 승자 없이 끝난다. 전멸형 조건은 "상대가 다 죽고 **내가 살아
+  // 있을 때**" 성립하므로, 모두 죽으면 어느 진영도 만족하지 못해 판이 영원히 돈다.
+  if (alive(next).length === 0) {
+    next.phase = 'ended'
+    next.log.push({ kind: 'all_dead' })
+    return
+  }
+
   // 교주팀 — "두 명 빼고 모두 사제" (§5.4)
   const cultRule = rules.victory.cult
   if (cultRule !== null) {

@@ -10,7 +10,7 @@
 
 import type { RulesConfig } from "../rules/config.ts";
 import { aiFiller, aiInterlude } from "../ai/brain.ts";
-import { advance, createSession, isOver, submit } from "../flow/session.ts";
+import { advanceUntilInput, createSession, isOver, submit } from "../flow/session.ts";
 import type { FlowAction, Session } from "../flow/types.ts";
 import { toViewModel, type ViewModel } from "../flow/viewModel.ts";
 /**
@@ -131,7 +131,8 @@ export class DuoHost {
   advancePhase(): { readonly ok: boolean; readonly reason?: string } {
     if (!this.session) return { ok: false, reason: "게임이 시작되지 않았습니다." };
     const withAi = aiInterlude(this.session, this.rules);
-    const result = advance(withAi, this.rules, aiFiller);
+    // 두 사람 중 누구의 차례도 아닌 호출은 자동으로 지나간다
+    const result = advanceUntilInput(withAi, this.rules, aiFiller);
     if (!result.ok) {
       this.session = withAi;
       this.revision += 1;

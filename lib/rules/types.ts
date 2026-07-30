@@ -134,6 +134,11 @@ export type GameEvent =
     }
   | { readonly kind: 'died'; readonly characterId: string; readonly cause: DeathCause }
   | { readonly kind: 'victory'; readonly faction: Faction }
+  /**
+   * 생존자가 아무도 남지 않았다. 전멸형 조건은 "상대가 다 죽고 내가 살아 있을 때" 성립하므로,
+   * 모두 죽으면 어느 진영도 이기지 못한다 — 그대로 두면 판이 영원히 돈다(측정: 96일차 교착).
+   */
+  | { readonly kind: 'all_dead' }
 
 export interface GameState {
   readonly mode: 'solo' | 'duo'

@@ -183,7 +183,11 @@ test('마지막 시민과 마피아가 같은 재판에서 함께 죽으면 무�
   const after = resolveTrial(state, RULES, { c1: 'kill' })
 
   assert.equal(after.winner, null, '아무 진영도 생존자가 없으면 승자가 없다')
-  assert.equal(after.phase, 'dusk')
+  assert.equal(after.phase, 'ended', '승자가 없어도 판은 끝나야 한다 — 안 끝나면 영원히 돈다')
+  assert.ok(
+    after.log.some((e) => e.kind === 'all_dead'),
+    '전멸을 기록으로 남겨야 화면이 이유를 설명할 수 있다',
+  )
   assert.equal(isAlive(after, 'c1'), false)
   assert.equal(isAlive(after, 'm1'), false)
 })

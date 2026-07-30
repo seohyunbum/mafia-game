@@ -35,7 +35,12 @@ test("솔로 판이 사람 개입 없이 끝까지 진행된다 — 막힘 0, �
   const summary = simulate(200);
   assert.equal(summary.stuck, 0, "advance 가 멈춘 판이 있으면 안 된다");
   assert.equal(summary.flowErrors, 0, "규칙 코어가 예상 못 한 입력을 받으면 안 된다");
-  assert.equal(summary.winRate["none"], 0, "승자 없이 끝나는 판이 없어야 한다");
+  // 전멸(모두 사망)은 규칙상 가능하고 그때는 승자가 없다. 다만 흔하면 안 된다 —
+  // 2000판 측정에서 0.1% 였다. 판이 끝나기만 하면(막힘 0) 정상이다.
+  assert.ok(
+    (summary.winRate["none"] ?? 0) < 2,
+    `승자 없이 끝난 판이 ${summary.winRate["none"]}% 다 — 전멸이 흔하면 밸런스 문제다`,
+  );
 });
 
 test("세 진영이 모두 이길 수 있다 — 어느 진영도 사실상 불가능하지 않다", () => {

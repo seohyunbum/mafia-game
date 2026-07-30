@@ -481,6 +481,39 @@ function targetAllowed(
   return legalTargets(session, rules, actorId, kind).some((c) => c.id === targetId);
 }
 
+/**
+ * 이미 낸 제출을 또 내려는 것인가.
+ *
+ * 요구 목록에서는 이미 사라지므로 화면은 다시 묻지 않는다. 그래도 API 가 조용히
+ * **덮어쓰기**를 허용하면 한 사람이 두 번 투표한 셈이 되고, 온라인에서는 낸 뒤에 마음을
+ * 바꿔 다시 내는 길이 열린다. 배포본 엔진도 이걸 거부했다(DUPLICATE_ACTION).
+ */
+function alreadySubmitted(session: Session, action: FlowAction): boolean {
+  switch (action.type) {
+    case "night-kill":
+    case "night-bomb":
+      return session.night.kills[action.actorId] !== undefined;
+    case "investigate":
+      return session.night.investigations[action.actorId] !== undefined;
+    case "protect":
+      return session.night.protects[action.actorId] !== undefined;
+    case "convert":
+      return session.night.conversion !== undefined;
+    case "listen":
+      return session.night.listens[action.actorId] === true;
+    case "disguise":
+      return session.disguiseChoices[action.actorId] !== undefined;
+    case "nominate":
+      return session.nominationVotes[action.actorId] !== undefined;
+    case "verdict":
+      return session.verdictVotes[action.actorId] !== undefined;
+    case "snipe":
+    case "talk":
+      // 저격은 횟수 제한이 규칙에 있고, 발언은 여러 번 할 수 있다
+      return false;
+  }
+}
+
 export function submit(session: Session, rules: RulesConfig, action: FlowAction): SubmitResult {
   const state = session.core;
   if (state.phase === "ended") return fail("이미 끝난 게임입니다.");
@@ -534,6 +567,10 @@ export function submit(session: Session, rules: RulesConfig, action: FlowAction)
   };
   if (state.phase !== expectedPhase[action.type]) {
     return fail(`지금 단계에서 낼 수 있는 행동이 아닙니다 (현재: ${state.phase}).`);
+  }
+
+  if (alreadySubmitted(session, action)) {
+    return fail("이미 제출했습니다. 한 번 낸 행동은 바꿀 수 없습니다.");
   }
 
   const next = cloneSession(session);
@@ -908,6 +945,9 @@ export function appendFeed(session: Session, events: readonly GameEvent[]): void
       case "victory":
         push(session, { text: `${FACTION_LABEL[event.faction]}이 승리했습니다.`, visibility: "public" });
         break;
+      case "all_dead":
+        push(session, { text: "생존자가 남지 않았습니다. 승자 없이 끝났습니다.", visibility: "public" });
+        break;
     }
   }
 }
@@ -1033,6 +1073,85 @@ export function advance(session: Session, rules: RulesConfig, fillAi?: AiFiller)
   return { ok: true, session: next };
 }
 
+
+/**
+ * **사람이 할 일이 생길 때까지** 자동으로 진행한다.
+ *
+ * 밤에는 사회자가 직업을 하나씩 부르는데(§6.1), 12인 판이면 호출이 5~6개이고 그중 내 차례는
+ * 하나다. 호출마다 클릭을 요구하면 사람이 하는 일의 대부분이 "다음 단계로" 누르기가 된다
+ * (측정: 판당 결정 6.4회 대 그냥 넘김 36.9회 — 클릭의 85%가 빈 클릭이었다).
+ *
+ * 그래서 멈추는 지점을 넷으로 좁혔다.
+ *   - 사람이 낼 필수 제출이 생겼다
+ *   - **새벽** — 밤에 무슨 일이 있었는지 확인하는 자리다
+ *   - 게임이 끝났다
+ *   - 사람 없이 더 갈 수 없다 (막힘)
+ *
+ * 지나간 호출은 사라지지 않는다. 어떤 직업이 불려 나갔는지 요약해 기록에 남긴다 —
+ * 호출 순서 자체가 판의 구성을 읽는 단서이기 때문이다(§6.1).
+ */
+export function advanceUntilInput(
+  session: Session,
+  rules: RulesConfig,
+  fillAi?: AiFiller,
+  limit = 40,
+): AdvanceResult {
+  let working = session;
+  let moved = false;
+  const skippedCalls: string[] = [];
+
+  for (let step = 0; step < limit; step += 1) {
+    if (working.core.phase === "ended") break;
+
+    // 사람 차례면 여기서 멈춘다
+    if (blockingHumanRequirements(working, rules).length > 0) break;
+    // 사람이 낼 수 있는 선택적 제출(시민의 청취·스나이퍼의 저격)도 기다려 준다
+    if (
+      working.core.phase === "night" &&
+      requirements(working, rules).some(
+        (r) => isHuman(working, r.actorId) && characterOf(working, r.actorId)?.alive === true,
+      )
+    ) {
+      break;
+    }
+
+    const before = working;
+    const beforePhase = working.core.phase;
+    const beforeCall = currentNightStep(working, rules)?.prompt ?? null;
+
+    const result = advance(working, rules, fillAi);
+    if (!result.ok) {
+      return moved ? { ok: true, session: withSkipNote(working, skippedCalls) } : result;
+    }
+    working = result.session;
+    moved = true;
+
+    if (beforePhase === "night" && working.core.phase === "night" && beforeCall) {
+      skippedCalls.push(beforeCall);
+    }
+    if (working === before) break;
+
+    // 새벽은 확인하는 자리다 — 여기서 멈춘다.
+    // 단 **사람이 이미 다 죽었으면 멈추지 않는다.** 시체가 새벽마다 '다음 단계로' 를 누르는
+    // 것은 노동이지 게임이 아니다 (측정: 판당 2.6회, 남은 빈 클릭의 46%가 사망 후 관전이었다).
+    // 끝까지 달려가 결과를 보여준다.
+    if (working.core.phase === "dawn" && alive(working.core).some((c) => isHuman(working, c.id))) {
+      break;
+    }
+    if (working.core.phase === "ended") break;
+  }
+
+  return { ok: true, session: withSkipNote(working, skippedCalls) };
+}
+
+/** 자동으로 지나간 사회자 호출을 기록에 남긴다. 호출 순서는 그 자체가 정보다 (§6.1). */
+function withSkipNote(session: Session, skipped: readonly string[]): Session {
+  if (skipped.length === 0) return session;
+  const next = cloneSession(session);
+  systemMessage(next, `사회자가 차례로 불렀습니다 — ${skipped.map((p) => `“${p}”`).join(" ")}`);
+  return next;
+}
+
 /** 승부가 났는가. */
 export function isOver(session: Session): boolean {
   return session.core.phase === "ended" || session.core.winner !== null;
@@ -1075,6 +1194,11 @@ export function knownRoleFor(session: Session, viewerId: string, targetId: strin
   const target = characterOf(session, targetId);
   if (!viewer || !target) return null;
   if (viewer.id === target.id) return target.roleId;
+  // **죽은 사람은 모든 정체를 본다.** 오프라인 마피아의 관례이고 규칙에는 영향이 없다
+  // (사망자는 더 이상 아무것도 낼 수 없다). 사람이 판의 85% 에서 죽고 그 뒤 평균 2.9일이
+  // 남는데(측정), 아무것도 못 보는 관전은 그냥 기다리기다. 정체가 보이면 남은 판이
+  // "내 판단이 맞았는지 확인하는 시간" 이 된다.
+  if (!viewer.alive) return target.roleId;
   if (viewer.faction === "mafia" && target.faction === "mafia") return target.roleId;
   if (viewer.faction === "cult" && target.faction === "cult") return target.roleId;
   // 듀오 짝은 진영과 무관하게 서로를 안다 (DESIGN.md §2).
