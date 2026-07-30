@@ -23,7 +23,7 @@ export async function generateMetadata(): Promise<Metadata> {
       template: "%s | 밤의 의회",
     },
     description:
-      "아홉 명의 원탁에서 펼쳐지는 마피아·폭탄마·교주 3진영 심리전",
+      "열두 명의 원탁에서 펼쳐지는 시민·마피아·교주 3진영 심리전",
     applicationName: "밤의 의회",
     icons: {
       icon: "/mafia-icon.png",
@@ -36,7 +36,7 @@ export async function generateMetadata(): Promise<Metadata> {
       url: origin,
       title: "밤의 의회 — 마피아 게임",
       description:
-        "아홉 명의 원탁에서 펼쳐지는 마피아·폭탄마·교주 3진영 심리전",
+        "열두 명의 원탁에서 펼쳐지는 시민·마피아·교주 3진영 심리전",
       siteName: "밤의 의회",
       locale: "ko_KR",
       images: [
@@ -44,7 +44,7 @@ export async function generateMetadata(): Promise<Metadata> {
           url: socialImage,
           width: 1672,
           height: 941,
-          alt: "붉은 달 아래 아홉 명이 모인 밤의 의회",
+          alt: "붉은 달 아래 열두 명이 모인 밤의 의회",
         },
       ],
     },

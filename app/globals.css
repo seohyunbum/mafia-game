@@ -1670,8 +1670,14 @@ kbd {
    좌석 좌표를 손으로 박아 두면(.seat-1 … .seat-9) 인원이 바뀔 때마다 CSS 를 고쳐야 한다.
    12인 표준 구성(DESIGN.md Q10)으로 늘리면서 위치는 JSX 가 삼각함수로 계산해 인라인으로
    주고, 여기서는 정렬 기준점만 잡는다. 인원이 또 바뀌어도 CSS 는 그대로다. */
-.round-table.is-ring .player-card {
-  transform: translate(-50%, -50%);
+@media (min-width: 881px) {
+  .round-table.is-ring .player-card {
+    top: var(--seat-top);
+    right: auto;
+    bottom: auto;
+    left: var(--seat-left);
+    transform: translate(-50%, -50%);
+  }
 }
 
 .player-card[aria-pressed="true"] {

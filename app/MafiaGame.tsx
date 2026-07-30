@@ -12,7 +12,7 @@
  * 진행 함수가 던지는 예외를 받을 데가 없어서, 화면이 조용히 멈추곤 했다.
  */
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useState, type CSSProperties } from "react";
 
 import { getRules } from "@/lib/rules/browserRules";
 import type { Faction, RoleId } from "@/lib/rules/types";
@@ -512,6 +512,7 @@ function SeatRing({
       </div>
       {seats.map((seat, index) => {
         // 좌석을 원형으로 배치한다 — 인원이 바뀌어도 좌표를 손보지 않는다.
+        // 좁은 화면(≤880px)에서는 CSS 가 이 값을 쓰지 않고 3열 그리드로 접힌다.
         const angle = (index / seats.length) * Math.PI * 2 - Math.PI / 2;
         const top = 50 + Math.sin(angle) * 40;
         const left = 50 + Math.cos(angle) * 42;
@@ -521,7 +522,7 @@ function SeatRing({
             key={seat.id}
             type="button"
             className={`player-card avatar-${(index % 13) + 1}`}
-            style={{ top: `${top}%`, left: `${left}%` }}
+            style={{ "--seat-top": `${top}%`, "--seat-left": `${left}%` } as CSSProperties}
             disabled={!canPick}
             aria-pressed={picked.includes(seat.id)}
             onClick={() => onPick(seat.id)}
