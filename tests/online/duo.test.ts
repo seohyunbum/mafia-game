@@ -135,17 +135,46 @@ test("게스트 뷰에는 남의 정체가 들어 있지 않다 (같은 편 제�
       const real: Character | undefined = session.core.characters.find((c) => c.id === seat.id);
       assert.ok(real);
       if (seat.knownRoleId === null) continue;
-      // 정체가 보이는 건 같은 진영이고, 시민팀은 서로를 모른다
+      // 짝은 진영과 무관하게 서로를 안다 (DESIGN.md §2)
+      if (seat.id === HOST_SEAT_ID) continue;
+      // 그 밖에 정체가 보이는 건 같은 진영뿐이고, 시민팀은 서로를 모른다
       assert.notEqual(myFaction, "citizen", `seed ${seed}: 시민팀인데 남의 정체가 보인다`);
       assert.equal(real.faction, myFaction, `seed ${seed}: 다른 진영의 정체가 보인다`);
     }
 
-    const allyIds = view.allies.map((a) => a.id);
-    for (const id of allyIds) {
-      const real: Character | undefined = session.core.characters.find((c) => c.id === id);
+    for (const ally of view.allies) {
+      if (ally.id === HOST_SEAT_ID) continue; // 짝은 항상 보인다
+      const real: Character | undefined = session.core.characters.find((c) => c.id === ally.id);
       assert.equal(real?.faction, myFaction);
     }
   }
+});
+
+
+test("듀오 짝은 진영과 무관하게 서로를 안다 (DESIGN.md §2)", () => {
+  // 둘 다 시민팀으로 배정되는 판에서도 서로를 알아봐야 한다 — 모르면 '같이 편먹는다' 가
+  // 성립하지 않는다. 시민팀은 원래 서로를 모르기 때문에 이건 짝에게만 주는 예외다.
+  let sawCitizenPair = false;
+  for (let seed = 1; seed <= 60; seed += 1) {
+    const { host } = startDuo(seed);
+    const hostView = host.viewFor(HOST_SEAT_ID);
+    const guestView = host.viewFor(GUEST_SEAT_ID);
+    assert.ok(hostView && guestView);
+
+    assert.ok(
+      hostView.allies.some((a) => a.id === GUEST_SEAT_ID),
+      `seed ${seed}: 방장이 짝을 모른다`,
+    );
+    assert.ok(
+      guestView.allies.some((a) => a.id === HOST_SEAT_ID),
+      `seed ${seed}: 참가자가 짝을 모른다`,
+    );
+    // 좌석 카드에도 정체가 보여야 화면이 일관된다
+    assert.ok(guestView.seats.find((s) => s.id === HOST_SEAT_ID)?.knownRoleId);
+
+    if (hostView.self.faction === "citizen") sawCitizenPair = true;
+  }
+  assert.equal(sawCitizenPair, true, "시민팀 짝이 나오는 시드가 없어 검증이 무의미하다");
 });
 
 test("진행 권한은 호스트에게만 있다", () => {

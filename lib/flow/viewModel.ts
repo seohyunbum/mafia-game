@@ -122,13 +122,26 @@ export function toViewModel(
   const steps = currentNightSteps(session, rules);
   const blocking = blockingHumanRequirements(session, rules);
 
-  // 같은 진영이라고 서로를 다 아는 게 아니다 — 시민팀은 아무도 모른다 (session.knownRoleFor 와 같은 규칙)
+  // 같은 진영이라고 서로를 다 아는 게 아니다 — 시민팀은 아무도 모른다
+  // (session.ts 의 knownRoleFor 와 같은 규칙).
   const allies: AllyView[] =
     character.faction === "citizen"
       ? []
       : session.core.characters
           .filter((c) => c.id !== viewerId && c.faction === character.faction)
           .map((c) => ({ id: c.id, name: nameOf(session, c.id), roleId: c.roleId }));
+
+  // **듀오 짝은 진영과 무관하게 서로를 안다** (DESIGN.md §2 — "둘이 같이 편먹는다").
+  // 이게 없으면 둘 다 시민팀일 때 서로를 못 알아보고, 같이 하는 의미가 사라진다.
+  if (session.mode === "duo" && session.humanIds.includes(viewerId)) {
+    for (const partnerId of session.humanIds) {
+      if (partnerId === viewerId) continue;
+      if (allies.some((ally) => ally.id === partnerId)) continue;
+      const partner = characterOf(session, partnerId);
+      if (!partner) continue;
+      allies.unshift({ id: partner.id, name: nameOf(session, partner.id), roleId: partner.roleId });
+    }
+  }
 
   const shotsLeft =
     character.roleId === "sniper"

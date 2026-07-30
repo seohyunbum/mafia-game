@@ -1077,6 +1077,10 @@ export function knownRoleFor(session: Session, viewerId: string, targetId: strin
   if (viewer.id === target.id) return target.roleId;
   if (viewer.faction === "mafia" && target.faction === "mafia") return target.roleId;
   if (viewer.faction === "cult" && target.faction === "cult") return target.roleId;
+  // 듀오 짝은 진영과 무관하게 서로를 안다 (DESIGN.md §2).
+  if (session.mode === "duo" && session.humanIds.includes(viewer.id) && session.humanIds.includes(target.id)) {
+    return target.roleId;
+  }
   return null;
 }
 
