@@ -2,6 +2,15 @@ import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
 import "./globals.css";
 
+/**
+ * 배포본의 정본 주소. 표준 실행 경로가 이 URL 이다 (README §실행 표면).
+ *
+ * 메타데이터를 요청 host 로만 만들면, Pages 배포본을 **프리렌더할 때의 임시 서버 주소**가
+ * 아이콘·og 링크에 그대로 굳는다(실측: `http://127.0.0.1:4123/mafia-icon.png`). 배포 빌드에는
+ * PAGES_SITE_ORIGIN 을 주고, 없으면 요청 host 를 쓴다.
+ */
+const SITE_ORIGIN = process.env.PAGES_SITE_ORIGIN ?? null;
+
 export async function generateMetadata(): Promise<Metadata> {
   const requestHeaders = await headers();
   const host =
@@ -13,7 +22,7 @@ export async function generateMetadata(): Promise<Metadata> {
     (host.startsWith("localhost") || host.startsWith("127.0.0.1")
       ? "http"
       : "https");
-  const origin = `${protocol}://${host}`;
+  const origin = SITE_ORIGIN ?? `${protocol}://${host}`;
   const socialImage = `${origin}/og.png`;
 
   return {
