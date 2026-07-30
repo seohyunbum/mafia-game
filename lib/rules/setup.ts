@@ -75,18 +75,32 @@ function enforceDuoSameFaction(
   if (roleA === undefined || roleB === undefined) throw new RuleError('듀오 짝의 역할을 찾지 못했다')
   if (factionOf(roleA) === factionOf(roleB)) return
 
-  const swapWith = assigned.findIndex(
-    (role, i) => i !== indexA && i !== indexB && factionOf(role) === factionOf(roleA),
-  )
-  if (swapWith < 0) {
-    throw new RuleError(
-      `이 구성으로는 듀오 짝을 같은 진영에 둘 수 없다 — ${factionOf(roleA)} 역할이 2개 이상 필요하다`,
+  /** `keep` 쪽 진영으로 상대를 끌어온다. 그 진영 역할을 가진 제3자와 맞바꾼다. */
+  const unifyInto = (keepIndex: number, moveIndex: number): boolean => {
+    const keepRole = assigned[keepIndex]
+    const moveRole = assigned[moveIndex]
+    if (keepRole === undefined || moveRole === undefined) return false
+    const swapWith = assigned.findIndex(
+      (role, i) => i !== keepIndex && i !== moveIndex && factionOf(role) === factionOf(keepRole),
     )
+    if (swapWith < 0) return false
+    const displaced = assigned[swapWith]
+    if (displaced === undefined) return false
+    assigned[swapWith] = moveRole
+    assigned[moveIndex] = displaced
+    return true
   }
-  const displaced = assigned[swapWith]
-  if (displaced === undefined) throw new RuleError('역할 교환 실패')
-  assigned[swapWith] = roleB
-  assigned[indexB] = displaced
+
+  // 어느 쪽 진영으로 모으든 상관없다. 한쪽이 안 되면 반대쪽을 시도한다 —
+  // **1인 진영이 있는 구성에서 듀오가 시작조차 못 하는 것을 막는다.** 12인 표준 구성의
+  // 교주팀은 교주 한 명뿐이라, 짝 중 하나가 교주를 뽑으면 이 경로로 들어온다.
+  // 정본 §2 도 짝의 진영을 "둘 다 마피아, 또는 둘 다 시민" 으로 예시한다.
+  if (unifyInto(indexA, indexB)) return
+  if (unifyInto(indexB, indexA)) return
+
+  throw new RuleError(
+    '이 구성으로는 듀오 짝을 같은 진영에 둘 수 없다 — 역할이 2개 이상인 진영이 하나는 있어야 한다',
+  )
 }
 
 export function createGame(options: SetupOptions, rules: RulesConfig, rng: Rng): GameState {
