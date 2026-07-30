@@ -18,7 +18,7 @@ import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "r
 import { getRules } from "@/lib/rules/browserRules";
 import type { Faction, RoleId } from "@/lib/rules/types";
 import { aiFiller, aiInterlude } from "@/lib/ai/brain";
-import { advance, createSession, submit } from "@/lib/flow/session";
+import { advanceUntilInput, createSession, submit } from "@/lib/flow/session";
 import type { FlowAction, Requirement, Session } from "@/lib/flow/types";
 import { displayNameIn, toViewModel, type SeatView, type ViewModel } from "@/lib/flow/viewModel";
 import { normalizeRoomCode } from "@/lib/online/protocol";
@@ -268,7 +268,8 @@ export default function MafiaGame() {
     }
     if (!session) return;
     const withAi = aiInterlude(session, rules);
-    const result = advance(withAi, rules, aiFiller);
+    // 내 차례가 아닌 사회자 호출은 자동으로 지나간다 — 빈 클릭을 만들지 않는다.
+    const result = advanceUntilInput(withAi, rules, aiFiller);
     if (!result.ok) {
       setError("아직 당신이 낼 행동이 남아 있습니다.");
       setSession(withAi);
@@ -649,13 +650,17 @@ function ActionPanel({
           </>
         ) : (
           <>
-            <span className="eyebrow">{view.phase === "night" ? "다른 직업의 차례" : "진행"}</span>
+            <span className="eyebrow">
+              {view.spectating ? "관전" : view.phase === "night" ? "다른 직업의 차례" : "진행"}
+            </span>
             <p className="action-hint">
-              {waitingForHost
-                ? "낼 행동이 없습니다. 방장이 다음 단계로 넘길 때까지 기다리세요."
-                : view.phase === "night"
-                  ? "당신은 이 호출의 대상이 아닙니다. 다음 호출로 넘기세요."
-                  : "낼 행동이 없습니다. 다음 단계로 넘기세요."}
+              {view.spectating
+                ? "당신은 사망했습니다. 이제 모든 좌석의 정체가 보입니다 — 남은 판을 지켜보세요."
+                : waitingForHost
+                  ? "낼 행동이 없습니다. 방장이 다음 단계로 넘길 때까지 기다리세요."
+                  : view.phase === "night"
+                    ? "당신은 이 호출의 대상이 아닙니다. 다음 호출로 넘기세요."
+                    : "낼 행동이 없습니다. 다음 단계로 넘기세요."}
             </p>
           </>
         )}
@@ -762,9 +767,11 @@ function ActionPanel({
             disabled={!view.canAdvance}
             onClick={onStep}
           >
-            {view.phase === "night" && view.nightStepIndex + 1 < view.nightStepCount
-              ? "다음 호출로"
-              : "다음 단계로"}
+            {view.spectating
+              ? "끝까지 보기"
+              : view.phase === "night" && view.nightStepIndex + 1 < view.nightStepCount
+                ? "다음 호출로"
+                : "다음 단계로"}
           </button>
         ) : (
           <p className="action-hint muted">진행은 방장이 넘깁니다.</p>
