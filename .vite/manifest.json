@@ -11,7 +11,7 @@
     "name": "rolldown-runtime"
   },
   "app/MafiaGame.tsx": {
-    "file": "assets/MafiaGame-C6jyHQe1.js",
+    "file": "assets/MafiaGame-CV7yOpWH.js",
     "name": "MafiaGame",
     "src": "app/MafiaGame.tsx",
     "isDynamicEntry": true,
@@ -34,7 +34,7 @@
     ]
   },
   "node_modules/vinext/dist/shims/layout-segment-context.js": {
-    "file": "assets/layout-segment-context-DqkUzx4i.js",
+    "file": "assets/layout-segment-context-Car-yR6z.js",
     "name": "layout-segment-context",
     "src": "node_modules/vinext/dist/shims/layout-segment-context.js",
     "isDynamicEntry": true,
@@ -45,7 +45,7 @@
     ]
   },
   "virtual:vinext-app-browser-entry": {
-    "file": "assets/index-DnGR-QZi.js",
+    "file": "assets/index-CANPnnsg.js",
     "name": "index",
     "src": "virtual:vinext-app-browser-entry",
     "isEntry": true,
