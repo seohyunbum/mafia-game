@@ -1,48 +1,220 @@
 {
-  "version": 1,
-  "players": {
-    "total": 9,
-    "soloHumans": 1,
-    "duoHumans": 2,
-    "startingHp": 2
+  "schema_version": 4,
+  "_comment": "전역 규칙 수치. status 가 confirmed 면 사용자가 직접 말한 규칙이라 임의로 바꾸지 않는다. interpretation 은 내 해석이라 답이 오면 여기만 고치면 된다. undecided 는 null 로 남긴다 (임의값 금지). 정본 설명은 docs/DESIGN.md",
+
+  "character": {
+    "start_hp": 2,
+    "_start_hp_status": "confirmed"
   },
-  "turn": {
-    "firstPhase": "night",
-    "nightKill": "instant",
-    "nightKillCount": 1,
-    "dayVoteDamage": 1,
-    "dayVoteTie": "no-damage"
+
+  "night_kill": {
+    "instant_death": true,
+    "_instant_death_status": "confirmed (Q2) — 찍힌 사람은 HP 무시하고 확정 사망",
+    "kills_per_night": 1,
+    "_kills_per_night_status": "interpretation (Q10) — 마피아팀 합의 1회. 폭탄마가 쓰면 일반 살해를 대체한다"
   },
-  "disguise": {
-    "role": "mafia",
-    "target": "random-living-citizen",
-    "duration": "until-dusk",
-    "allowDeadTarget": false,
-    "allowDuplicateTarget": false,
-    "damageRecipientWhenVoted": "disguised-mafia",
-    "breakWhenOriginalDies": true
+
+  "night_sequence": {
+    "_comment": "사회자가 직업을 순서대로 깨운다. 시간은 표현층이 재고, 코어는 '행동 없는 필수 호출 = 시간초과'로 본다 (DESIGN.md §6.1)",
+    "time_limit_seconds": 90,
+    "_time_limit_seconds_status": "confirmed — 직업마다 1분 30초",
+    "timeout_penalty": "death",
+    "_timeout_penalty_status": "confirmed — 시간 안에 능력을 쓰지 않으면 사망",
+    "steps": [
+      {
+        "id": "mafia",
+        "prompt": "마피아는 일어나주세요",
+        "roles": ["mafia", "bomber"],
+        "required": true,
+        "_roles_status": "interpretation (Q32) — 마피아와 폭탄마를 한 번에 깨운다. 팀 살해가 1회라서 둘 중 누가 하든 이행으로 본다"
+      },
+      {
+        "id": "sniper",
+        "prompt": "스나이퍼는 일어나주세요",
+        "roles": ["sniper"],
+        "required": false,
+        "_required_status": "confirmed — 스나이퍼는 능력을 쓰지 않아도 된다"
+      },
+      {
+        "id": "police",
+        "prompt": "경찰은 일어나주세요",
+        "roles": ["police"],
+        "required": true
+      },
+      {
+        "id": "doctor",
+        "prompt": "의사는 일어나주세요",
+        "roles": ["doctor"],
+        "required": true
+      },
+      {
+        "id": "citizen",
+        "prompt": "시민은 일어나주세요",
+        "roles": ["citizen"],
+        "required": false,
+        "_required_status": "confirmed — 시민은 능력이 없어서 쓰지 않아도 된다. 그래도 호출은 한다(호출 순서만 보고 구성을 읽지 못하게)"
+      },
+      {
+        "id": "cult",
+        "prompt": "교주는 일어나주세요",
+        "roles": ["cultleader"],
+        "required": true,
+        "even_nights_only": true,
+        "_even_nights_only_status": "confirmed — 교주는 짝수 밤에만 일어난다"
+      }
+    ],
+    "_steps_note": "모든 직업을 호출한다. required=false 인 직업(스나이퍼·시민)은 능력을 쓰지 않아도 죽지 않는다"
   },
+
+  "day_schedule": {
+    "investigation_seconds": 300,
+    "_investigation_seconds_status": "confirmed — 밤이 끝나면 5분 동안 시체 조사·행동, 그 다음 투표 (Morning 페이즈)"
+  },
+
   "bomber": {
-    "trigger": "death-from-day-vote",
-    "damage": 1,
-    "targets": "all-living-voters-including-allies"
+    "candidate_count": 3,
+    "_candidate_count_status": "confirmed — 후보 3명을 고른다",
+    "collateral_damage": 1,
+    "_collateral_damage_status": "confirmed — 찍히지 않은 후보는 HP 1 감소",
+    "allow_fewer_candidates_when_short": true,
+    "_allow_fewer_candidates_when_short_status": "interpretation — 후보 세울 생존자가 3명 미만이면 있는 만큼. 막판에 밤이 막히면 안 된다",
+    "can_target_own_faction": false,
+    "_can_target_own_faction_status": "interpretation (Q12c) — 후보에 마피아팀(자신 포함)을 넣지 않는다",
+    "uses_per_game": 2,
+    "_uses_per_game_status": "interpretation (Q12b) — 2026-07-30 변경: null(무제한) → 3. 무제한이면 매 밤 1명 즉사 + 2명 부상이라 마피아팀 승률 98%였다(측정). 1회로 줄이면 반대로 교주팀이 80% 압승한다. 2회가 세 진영이 가장 고르게 갈리는 지점이다(400판: 시민 23.8 / 마피아 35.8 / 교주 39.3)",
+    "trigger": "active_night",
+    "_trigger_status": "interpretation (Q12a) — 밤에 능동 사용. 사망 시 자동 폭발이 아니다"
   },
+
+  "day_vote": {
+    "resolution": "nominate_then_trial",
+    "_resolution_status": "confirmed (Q3) — 지목 투표 → 피고 변론 → 살린다/죽인다 투표",
+
+    "nomination": {
+      "rule": "plurality_one",
+      "_rule_status": "confirmed (Q3) — 최다득표 1명이 피고",
+      "tie": "random",
+      "_tie_status": "interpretation (Q15) — 2026-07-30 변경: no_nomination → random. 동표로 하루를 통째로 버리면 낮이 헛돌고(측정: 판당 0.90회), 2인 국면에서는 1-1 동표가 영원히 반복돼 판이 끝나지 않았다(측정: 48일차 교착). 동표 중 무작위 1명을 법정에 세운다"
+    },
+
+    "verdict": {
+      "nominee_votes": false,
+      "_nominee_votes_status": "interpretation (Q15) — 피고는 변론만 하고 자기 생사 투표에는 불참",
+      "threshold": "half_or_more",
+      "_threshold_status": "interpretation (Q15) — 2026-07-30 변경: over_half → half_or_more. 정확히 반이면 살리는 규칙은 소인원 국면에서 1-1 동표를 무한 반복시켜 결론이 나지 않았다. 이제 동표면 처형된다"
+    },
+
+    "execution_result": "death",
+    "_execution_result_status": "confirmed (Q3) — '죽인다' 가결 시 사망 (HP 무시)",
+
+    "damage_to_disguise_origin": 1,
+    "_damage_to_disguise_origin_status": "confirmed (Q1) — 피해는 흉내낸 원본 시민에게, 마피아 본인은 무피해",
+    "disguised_nominee_survives": false,
+    "_disguised_nominee_survives_status": "interpretation (Q4 파생) — 2026-07-30 변경: true → false. 생존으로 두면 마피아가 매 아침 변신해 처형을 무한히 흡수하므로 **낮에 절대 죽지 않는다**(측정: 60판 마피아 처형 0회, 시민 승률 0%). 정본 §5.1 은 변신을 '공격기'로 규정하는데, 생존까지 붙으면 방어기를 겸하게 된다. 이제 흡수 피해는 원본 시민이 받고 마피아 본인도 처형된다"
+  },
+
+  "sniper": {
+    "phase": "any",
+    "_phase_status": "confirmed — '밤이든 낮이든 어디서나'. 페이즈 해소에 묶이지 않는 독립 행동",
+    "instant_death": true,
+    "_instant_death_status": "interpretation — 밤 살해·처형과 동일하게 HP 무시",
+    "uses_per_game": 1,
+    "_uses_per_game_status": "interpretation (Q29) — '한 명을 죽일 수 있어'를 총 1발로 읽었다. 밤 살해와 별개라서 무제한이면 마피아팀이 압도적이다",
+    "replaces_team_night_kill": false,
+    "_replaces_team_night_kill_status": "interpretation (Q30) — 폭탄마와 달리 밤 살해를 대체하지 않는다",
+    "can_target_own_faction": false,
+    "_can_target_own_faction_status": "interpretation — 자기 팀은 쏘지 않는다. 그래서 변신과도 얽히지 않는다",
+    "ignores_protection": true,
+    "_ignores_protection_status": "interpretation (Q31) — 보호는 '그 밤의 살해' 규칙이고 저격은 페이즈 밖이라 보호 상태가 없는 시점에도 발생한다"
+  },
+
   "cult": {
-    "conversionUses": 1,
-    "validTargetFaction": "citizen",
-    "duoCitizenHumanTarget": "excluded",
-    "mafiaAttempt": "fail-without-reveal",
-    "disabledWhenLeaderDead": true
+    "active_nights": "even",
+    "_active_nights_status": "confirmed — 교주는 짝수 밤에만 움직인다",
+    "conversions_per_activation": 1,
+    "_conversions_per_activation_status": "interpretation — '사제를 늘린다'를 한 밤 1명으로 읽었다",
+    "can_convert_mafia": true,
+    "_can_convert_mafia_status": "interpretation (Q26) — 막으면 '두 명 빼고 모두'에 도달하는 경로가 닫힌다",
+    "protect_blocks_conversion": false,
+    "_protect_blocks_conversion_status": "interpretation — 의사 보호는 살해 전용",
+    "converts_keep_role": true,
+    "_converts_keep_role_status": "interpretation — 원래 역할을 유지한 채 진영만 바뀐다. 경찰이 사제가 되면 검사 정보가 교주팀 것이 된다",
+    "leader_death_frees_converts": false,
+    "_leader_death_frees_converts_status": "interpretation (Q27) — 교주가 죽어도 사제는 교주팀으로 남는다"
   },
+
+  "police": {
+    "phase": "night",
+    "_phase_status": "interpretation (Q21) — 검사 시점이 밤이면 변신과 얽히지 않는다",
+    "result": "is_mafia",
+    "_result_status": "interpretation (Q22) — '마피아팀인가 아닌가' 두 갈래. 'exact_role' 이면 훨씬 강해진다",
+    "allow_self": false,
+    "_allow_self_status": "interpretation — 자기 정체는 이미 알므로 무의미",
+    "allow_repeat_target": true,
+    "_allow_repeat_target_status": "interpretation — 같은 사람 반복 검사 허용. false 는 아직 구현하지 않았다(기록이 필요)"
+  },
+
+  "doctor": {
+    "phase": "night",
+    "_phase_status": "interpretation",
+    "effect": "prevent_night_kill",
+    "_effect_status": "interpretation (Q23) — '살림'을 부활이 아니라 보호로 읽었다",
+    "allow_self": true,
+    "_allow_self_status": "interpretation — 자기 자신도 지킬 수 있다",
+    "allow_repeat_target": true,
+    "_allow_repeat_target_status": "interpretation — 같은 사람 연속 보호 허용. false 는 아직 구현하지 않았다(기록이 필요)"
+  },
+
+  "disguise": {
+    "target_selection": "random",
+    "_target_selection_status": "confirmed — 마피아가 고르지 않고 무작위",
+    "target_pool": "alive_citizens",
+    "_target_pool_status": "interpretation (Q6) — 죽은 시민 변신 가능 여부 미정, 우선 생존 시민만",
+    "allow_duplicate_target": false,
+    "_allow_duplicate_target_status": "interpretation (Q6) — 마피아 간 같은 대상 중복 변신 불허",
+    "expires_at_end_of_day": true,
+    "_expires_at_end_of_day_status": "interpretation (Q5) — 지속 기간 미정, 우선 그 날 Dusk 에 해제",
+    "night_kill_allowed_while_disguised": true,
+    "_night_kill_allowed_while_disguised_status": "interpretation (Q7)",
+    "visible_to_others": null,
+    "_visible_to_others_status": "undecided (Q4) — 코어는 이벤트만 내보내고 공개 범위는 표현층이 정한다"
+  },
+
   "victory": {
-    "allSurvivorsDead": "draw"
+    "mafia": "opposing_factions_all_dead",
+    "_mafia_status": "confirmed — 시민팀과 교주팀 전원 사망",
+    "citizen": "opposing_factions_all_dead",
+    "_citizen_status": "interpretation (Q16) — 통상 규칙으로 채움. 비우면 소프트락이 된다",
+    "cult": "all_but_n_converted",
+    "_cult_status": "confirmed — 두 명 빼고 모두 사제가 되면 승리",
+    "cult_survivors_left": 2,
+    "_cult_survivors_left_status": "confirmed — '두 명 빼고'. 비-교주팀 생존자가 이 수 이하면 승리",
+    "cult_min_converts": 2,
+    "_cult_min_converts_status": "interpretation (Q28) — 2026-07-30 변경: 1 → 2. 기준이 생존자라서 '마피아가 죽일수록 교주가 이긴다'(§5.4 Q28). 1이면 포교 한 번 뒤 가만히 있어도 교주팀이 41% 이겼다. 2 로 올리면 실제로 두 번 포교해야 한다. 이 값을 올릴 때 생기던 소프트락(생존자 전원이 교주팀인데 문턱 미달)은 engine.ts 의 전멸형 대안 판정으로 막았다"
   },
-  "online": {
-    "transport": "peerjs-webrtc",
-    "roomCodeLength": 6,
-    "guestReconnectSeconds": 60,
-    "guestFallback": "ai",
-    "hostDisconnect": "end-game",
-    "authority": "host"
+
+  "turn": {
+    "first_phase": "night",
+    "_first_phase_status": "interpretation (Q18) — 첫 페이즈가 밤인지 낮인지 미정",
+    "phase_order": ["night", "dawn", "morning", "day", "trial", "dusk"],
+    "_phase_order_status": "골격은 확정, trial 은 Q3 답에서 파생"
+  },
+
+  "setup": {
+    "total_characters": 12,
+    "faction_counts": { "citizen": 8, "mafia": 3, "cult": 1 },
+    "_status": "confirmed (Q10 해소, 2026-07-30) — 12인: 시민6·경찰1·의사1 / 마피아1·폭탄마1·스나이퍼1 / 교주1. 코어는 여전히 구성을 인자로 받고(하드코딩 없음) 이 값은 표준 구성의 기록이다. 배포본의 9인(시민5·마피아1·폭탄마1·교주1·신도1)은 능력 없는 좌석이 5/9 였고 마피아 승률 98%였다",
+    "assign_role_at_start": true,
+    "_assign_role_at_start_status": "confirmed — 시작 즉시 배정"
+  },
+
+  "modes": {
+    "solo": { "team_size": 1 },
+    "duo": {
+      "team_size": 2,
+      "same_faction": true,
+      "know_each_other": true,
+      "_status": "same_faction/know_each_other 는 해석 (DESIGN.md §2)"
+    }
   }
 }
