@@ -1665,3 +1665,85 @@ kbd {
     forced-color-adjust: none;
   }
 }
+
+/* ── 원탁 좌석 링 ──────────────────────────────────────────────────────────
+   좌석 좌표를 손으로 박아 두면(.seat-1 … .seat-9) 인원이 바뀔 때마다 CSS 를 고쳐야 한다.
+   12인 표준 구성(DESIGN.md Q10)으로 늘리면서 위치는 JSX 가 삼각함수로 계산해 인라인으로
+   주고, 여기서는 정렬 기준점만 잡는다. 인원이 또 바뀌어도 CSS 는 그대로다. */
+.round-table.is-ring .player-card {
+  transform: translate(-50%, -50%);
+}
+
+.player-card[aria-pressed="true"] {
+  border-color: var(--gold-bright, var(--gold));
+  box-shadow:
+    0 0 0 2px var(--gold-bright, var(--gold)),
+    0 15px 32px rgba(0, 0, 0, 0.55);
+}
+
+.avatar-10 {
+  --avatar-accent: #4d5b6b;
+}
+
+.avatar-11 {
+  --avatar-accent: #6b4f2a;
+}
+
+.avatar-12 {
+  --avatar-accent: #3f5d4a;
+}
+
+.avatar-13 {
+  --avatar-accent: #5a3f5d;
+}
+
+/* 밤 호출 카드 — 사회자가 직업을 하나씩 깨우는 진행 (DESIGN.md §6.1) */
+.night-call {
+  display: grid;
+  gap: 0.35rem;
+  margin-bottom: 0.75rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--gold);
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.night-call strong {
+  color: var(--gold-bright, var(--gold));
+  font-size: 0.95rem;
+  letter-spacing: 0.02em;
+}
+
+.night-call .night-call-meta {
+  color: var(--muted, #9a9a9a);
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+}
+
+.candidate-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.4rem;
+}
+
+.candidate-chips li {
+  padding: 0.22rem 0.5rem;
+  border: 1px solid var(--line);
+  color: var(--gold);
+  font-size: 0.72rem;
+}
+
+.blocked-list {
+  margin: 0.4rem 0 0;
+  padding-left: 1rem;
+  color: var(--muted, #9a9a9a);
+  font-size: 0.76rem;
+}
+
+.snipe-float {
+  position: fixed;
+  right: 1.1rem;
+  bottom: 1.1rem;
+  z-index: 40;
+}

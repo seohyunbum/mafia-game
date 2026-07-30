@@ -47,8 +47,8 @@ export interface NightDraft {
   readonly kills: Record<string, { readonly targetId: string; readonly candidates?: readonly string[] }>;
   readonly investigations: Record<string, string>;
   readonly protects: Record<string, string>;
-  /** 교주의 포교. `null` 은 이번 밤 보류를 명시적으로 고른 것 */
-  readonly conversion: { readonly targetId: string } | null | undefined;
+  /** 교주의 포교. `null` 은 이번 밤 보류를 명시적으로 고른 것 (해소 직전에 복구되므로 가변) */
+  conversion: { readonly targetId: string } | null | undefined;
   /** 시민의 야간 청취 — 상태를 바꾸지 않는 정보 행동 (DESIGN.md §6.1.2) */
   readonly listens: Record<string, true>;
 }
