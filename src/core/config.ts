@@ -9,7 +9,7 @@
 
 import { isRoleId, type RoleId } from './types.ts'
 
-export const RULES_SCHEMA_VERSION = 4
+export const RULES_SCHEMA_VERSION = 5
 
 /**
  * 사회자가 깨우는 한 호출 (DESIGN.md §6.1).
@@ -30,6 +30,15 @@ export interface RulesConfig {
   readonly startHp: number
   readonly nightKill: {
     readonly lethality: LethalMode
+  }
+  /**
+   * 시작할 때 누가 누구를 아는가 (DESIGN.md §4.4).
+   * null 은 "아직 안 정했다" — 모르는 것으로 처리한다.
+   */
+  readonly knowledge: {
+    readonly mafia: boolean
+    readonly citizen: boolean
+    readonly cult: boolean | null
   }
   readonly nightSequence: {
     /** 호출당 제한시간. 코어는 시계를 갖지 않고 표현층에 이 값을 넘겨준다 */
@@ -260,6 +269,7 @@ export function parseRules(raw: unknown): RulesConfig {
   }
 
   const nightKill = obj(root, 'night_kill')
+  const knowledge = obj(root, 'knowledge')
   const nightSequence = obj(root, 'night_sequence')
 
   // 시간초과 페널티가 사망이 아닌 변형은 구현하지 않았다.
@@ -311,6 +321,14 @@ export function parseRules(raw: unknown): RulesConfig {
     startHp: posInt(obj(root, 'character'), 'character', 'start_hp'),
     nightKill: {
       lethality: lethality(nightKill, 'night_kill', bool(nightKill, 'night_kill', 'instant_death'), 'damage'),
+    },
+    knowledge: {
+      mafia: bool(knowledge, 'knowledge', 'mafia_know_each_other'),
+      citizen: bool(knowledge, 'knowledge', 'citizen_team_know_each_other'),
+      cult:
+        knowledge['cult_know_each_other'] === null
+          ? null
+          : bool(knowledge, 'knowledge', 'cult_know_each_other'),
     },
     nightSequence: {
       timeLimitSeconds: posInt(nightSequence, 'night_sequence', 'time_limit_seconds'),

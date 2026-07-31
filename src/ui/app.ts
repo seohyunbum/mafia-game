@@ -21,6 +21,7 @@ import {
   resolveMorning,
   resolveNight,
   resolveTrial,
+  knownAllies,
   sniperCanFire,
   verdictVoters,
   type ActiveNightStep,
@@ -40,6 +41,7 @@ import {
   DEATH_STORY,
   DEFAULT_NAMES,
   FACTION_NAME,
+  ROLE_BRIEF,
   ROLE_NAME,
   ROSTER_TAG,
   clock,
@@ -318,6 +320,68 @@ function setupScreen(): string {
     <div class="actions">
       <div class="spacer"></div>
       <button class="primary" data-action="start" ${problem ? 'disabled' : ''}>밤을 시작한다</button>
+    </div>
+  </section>`
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 화면 — 배역 확인 (§4.4). 기기를 돌려가며 본인만 본다
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 확인 중인 좌석. null 이면 확인 단계가 끝났다. */
+let revealAt: number | null = null
+let sealOpen = false
+
+function revealScreen(g: GameState): string {
+  const seat = revealAt ?? 0
+  const me = g.characters[seat]
+  if (!me) return ''
+  const last = seat === g.characters.length - 1
+
+  if (!sealOpen) {
+    return `<section class="sheet paper">
+      <div class="masthead">
+        <h1 class="offset">배역 확인</h1>
+        <div class="sub">${seat + 1} / ${g.characters.length} · 본인만 볼 것</div>
+      </div>
+      <div class="envelope">
+        <div class="seat">${String(seat + 1).padStart(2, '0')} 번 봉투</div>
+        <div class="who">${me.name}</div>
+        <div class="seal">봉</div>
+        <p class="alone">다른 사람이 보지 않는지 확인하고 열어라.</p>
+      </div>
+      <p class="pass-note">${topic(me.name)} 기기를 받아 직접 열어야 한다</p>
+      <div class="actions">
+        <span class="spacer"></span>
+        <button class="primary" data-action="open-seal">봉투를 연다</button>
+      </div>
+    </section>`
+  }
+
+  const allies = knownAllies(g, RULES, me.id)
+  return `<section class="sheet paper">
+    <div class="masthead">
+      <h1 class="offset">배역 확인</h1>
+      <div class="sub">${seat + 1} / ${g.characters.length} · ${me.name}</div>
+    </div>
+    <div class="envelope">
+      <div class="seat">${String(seat + 1).padStart(2, '0')} 번 · ${me.name}</div>
+      <div class="role">${ROLE_NAME[me.roleId]}</div>
+      <div class="faction">${FACTION_NAME[me.faction]}</div>
+      <p class="ability">${ROLE_BRIEF[me.roleId]}</p>
+      <div class="allies">
+        <div class="label">아는 사람</div>
+        ${
+          allies.length > 0
+            ? `<ul>${allies.map((a) => `<li>${a.name}</li>`).join('')}</ul>`
+            : '<p class="alone">없다. 혼자다.</p>'
+        }
+      </div>
+    </div>
+    <p class="pass-note">외웠으면 닫고 ${last ? '밤을 시작한다' : '다음 사람에게 넘긴다'}</p>
+    <div class="actions">
+      <span class="spacer"></span>
+      <button class="primary" data-action="close-seal">${last ? '닫고 밤으로' : '닫고 넘긴다'}</button>
     </div>
   </section>`
 }
@@ -686,7 +750,8 @@ function render(): void {
   stamps = collectStamps(g)
 
   let screen: string
-  if (sniperMode) screen = sniperOverlay(g)
+  if (revealAt !== null) screen = revealScreen(g)
+  else if (sniperMode) screen = sniperOverlay(g)
   else if (g.phase === 'night' && night !== null) screen = nightScreen(g, night)
   else if (g.phase === 'dawn') screen = dawnScreen(g)
   else if (g.phase === 'morning') screen = morningScreen(g)
@@ -695,7 +760,8 @@ function render(): void {
   else if (g.phase === 'dusk') screen = duskScreen(g)
   else screen = endedScreen(g)
 
-  const canSnipe = g.characters.some((c) => sniperCanFire(g, RULES, c.id))
+  // 배역 확인 중에는 저격 버튼을 숨긴다 — 봉투를 보는 사람에게 줄 선택이 아니다.
+  const canSnipe = revealAt === null && g.characters.some((c) => sniperCanFire(g, RULES, c.id))
   const dock =
     canSnipe && !sniperMode
       ? `<div class="snipe-dock"><button data-action="open-snipe">저격</button></div>`
@@ -809,11 +875,32 @@ root.addEventListener('click', (event) => {
       name: DEFAULT_NAMES[i] ?? `${i + 1}번`,
     }))
     game = createGame({ mode: 'solo', roster, roles }, RULES, rng)
-    beginNight()
+    // 밤보다 먼저 각자 배역을 확인한다 (§4.4).
+    revealAt = 0
+    sealOpen = false
+    render()
     return
   }
 
   if (g === null) return
+
+  if (action === 'open-seal') {
+    sealOpen = true
+    render()
+    return
+  }
+  if (action === 'close-seal') {
+    const next = (revealAt ?? 0) + 1
+    sealOpen = false
+    if (next >= g.characters.length) {
+      revealAt = null
+      beginNight()
+    } else {
+      revealAt = next
+      render()
+    }
+    return
+  }
 
   if (action === 'open-snipe') {
     sniperMode = true
@@ -948,6 +1035,8 @@ root.addEventListener('click', (event) => {
   if (action === 'restart') {
     game = null
     night = null
+    revealAt = null
+    sealOpen = false
     stopClock()
     render()
     return

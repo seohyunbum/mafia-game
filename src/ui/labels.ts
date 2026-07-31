@@ -53,6 +53,20 @@ export const DEFAULT_NAMES = [
   '노 교수',
 ]
 
+/** 배역 봉투에 적는 능력 설명. 정본은 docs/DESIGN.md §5. */
+export const ROLE_BRIEF: Readonly<Record<RoleId, string>> = {
+  citizen: '능력이 없다. 토론과 투표로 싸운다. 밤에 불려 나와도 할 일이 없다 — 그게 위장이 된다.',
+  police: '밤마다 한 명을 검사해 마피아팀인지 확인한다. 검사하지 않으면 죽는다.',
+  doctor: '밤마다 한 명을 지킨다. 지킨 사람은 그 밤 피해를 받지 않는다. 지키지 않으면 죽는다.',
+  mafia:
+    '밤마다 한 명을 죽인다. 아침에는 랜덤한 시민의 얼굴로 변신할 수 있다 — 변신 중 처형되면 흉내낸 원본 시민이 대신 다친다.',
+  bomber:
+    '밤마다 후보 3명을 고르고 그 중 1명을 터뜨린다. 찍힌 사람은 죽고 나머지 둘은 상처를 입는다. 후보 명단이 그대로 드러난다.',
+  sniper: '밤이든 낮이든 어디서나 한 명을 쏴 죽인다. 총알은 한 발. 쓰지 않아도 벌받지 않는다.',
+  cultleader:
+    '짝수 밤에만 움직인다. 한 명을 사제로 만든다. 두 명 빼고 모두 사제가 되면 이긴다.',
+}
+
 export const ROSTER_TAG: Readonly<Record<RoleId, string>> = {
   citizen: '시민',
   police: '경찰',

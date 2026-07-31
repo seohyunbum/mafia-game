@@ -20,6 +20,7 @@ import type {
   Verdict,
 } from './types.ts'
 import { RuleError, isConvert } from './types.ts'
+import { factionOf } from './setup.ts'
 import type { LethalMode, RulesConfig } from './config.ts'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -134,6 +135,32 @@ function pick<T>(items: readonly T[], rng: Rng): T {
   const chosen = items[index]
   if (chosen === undefined) throw new RuleError('선택 실패 — rng 가 [0,1) 범위를 벗어났다')
   return chosen
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 서로를 아는 관계 (§4.4)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 이 캐릭터가 **시작할 때 정체를 알게 되는** 동료들.
+ *
+ * 기준은 **배정 당시의 원래 진영**(`factionOf(roleId)`)이다. 현재 진영이 아니다 —
+ * 마피아가 사제로 전향하면(§5.4) 진영은 교주팀이 되지만, 다른 마피아들은 여전히 그를
+ * 동료로 알고 있고 그도 그들을 안다. 시작할 때 나눈 정보는 사라지지 않기 때문이다.
+ * 이 어긋남이 교주팀에게 정보 우위를 준다 — 의도한 결과다.
+ *
+ * 죽은 동료도 포함한다(알던 사실이 사라지지 않는다). 살아있는 사람만 필요하면 걸러서 쓴다.
+ */
+export function knownAllies(state: GameState, rules: RulesConfig, characterId: string): Character[] {
+  const self = find(state, characterId)
+  const origin = factionOf(self.roleId)
+  const knows =
+    origin === 'mafia' ? rules.knowledge.mafia
+    : origin === 'citizen' ? rules.knowledge.citizen
+    : (rules.knowledge.cult ?? false)
+
+  if (!knows) return []
+  return state.characters.filter((c) => c.id !== self.id && factionOf(c.roleId) === origin)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
