@@ -195,6 +195,24 @@ export default function MafiaGame() {
   const [error, setError] = useState<string | null>(null);
   const [snipeMode, setSnipeMode] = useState(false);
 
+  /**
+   * 초대 링크로 들어왔으면 참가 화면을 코드가 채워진 채로 연다.
+   *
+   * `?room=ABC123` — 방장이 "초대 링크 복사" 로 만든 주소다. 코드를 불러 주고 받아 적는
+   * 단계가 사라진다. 이름만 넣고 누르면 바로 원탁에 앉는다.
+   */
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const raw = new URLSearchParams(window.location.search).get("room");
+    if (!raw) return;
+    const code = normalizeRoomCode(raw);
+    if (code === null) return;
+    setRoomCodeInput(code);
+    setDialog("join");
+    // 주소창은 정리한다 — 새로고침 때마다 다시 열리면 성가시다
+    window.history.replaceState(null, "", window.location.pathname);
+  }, []);
+
   // duo 컨트롤러의 변화를 화면으로 끌어온다
   useEffect(() => {
     if (!duo) return;

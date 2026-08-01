@@ -14,6 +14,7 @@
 import {
   alive,
   cultCanAct,
+  knownAllies,
   fireSniper,
   nightSteps,
   resolveDawn,
@@ -1184,31 +1185,41 @@ export function visibleFeed(session: Session, viewerId: string): FeedEntry[] {
 }
 
 /**
- * 같은 진영이라고 서로를 다 아는 게 아니다.
- * - 마피아팀은 서로를 안다 (팀 살해를 함께 정하므로).
- * - 교주는 자기가 전향시킨 사제를 안다. 사제는 교주를 안다.
- * - 시민팀은 아무도 모른다.
+ * 이 사람에게 저 사람의 정체가 보이는가.
+ *
+ * 판정은 **규칙이 한다** — `knownAllies` (§4.4, 8차 입력). 여기서는 규칙 밖의 두 가지만 얹는다.
+ *   - 듀오 짝은 진영과 무관하게 서로를 안다 (§2 — "둘이 같이 편먹는다")
+ *   - 죽은 사람은 모두를 본다 (§13.5 — 관전)
  */
-export function knownRoleFor(session: Session, viewerId: string, targetId: string): RoleId | null {
+export function knownRoleFor(
+  session: Session,
+  rules: RulesConfig,
+  viewerId: string,
+  targetId: string,
+): RoleId | null {
   const viewer = characterOf(session, viewerId);
   const target = characterOf(session, targetId);
   if (!viewer || !target) return null;
   if (viewer.id === target.id) return target.roleId;
+
   // **죽은 사람은 모든 정체를 본다.** 오프라인 마피아의 관례이고 규칙에는 영향이 없다
-  // (사망자는 더 이상 아무것도 낼 수 없다). 사람이 판의 85% 에서 죽고 그 뒤 평균 2.9일이
-  // 남는데(측정), 아무것도 못 보는 관전은 그냥 기다리기다. 정체가 보이면 남은 판이
-  // "내 판단이 맞았는지 확인하는 시간" 이 된다.
+  // (사망자는 더 이상 아무것도 낼 수 없다). 사람은 판의 79% 에서 죽고 그 뒤 평균 2.2일이
+  // 남는데(측정), 아무것도 못 보는 관전은 그냥 기다리기다.
   if (!viewer.alive) return target.roleId;
-  if (viewer.faction === "mafia" && target.faction === "mafia") return target.roleId;
-  if (viewer.faction === "cult" && target.faction === "cult") return target.roleId;
-  // 듀오 짝은 진영과 무관하게 서로를 안다 (DESIGN.md §2).
+
+  // 시작할 때 나눠 받은 정보 (§4.4). 기준은 배정 당시의 원래 진영이다.
+  if (knownAllies(session.core, rules, viewer.id).some((c) => c.id === target.id)) {
+    return target.roleId;
+  }
+
+  // 듀오 짝은 진영과 무관하게 서로를 안다 (§2).
   if (session.mode === "duo" && session.humanIds.includes(viewer.id) && session.humanIds.includes(target.id)) {
     return target.roleId;
   }
   return null;
 }
 
-export function seatViews(session: Session, viewerId: string): SeatView[] {
+export function seatViews(session: Session, rules: RulesConfig, viewerId: string): SeatView[] {
   const names = new Map<string, number>();
   for (const seat of session.seats) {
     const character = characterOf(session, seat.id);
@@ -1228,7 +1239,7 @@ export function seatViews(session: Session, viewerId: string): SeatView[] {
       hp: character?.hp ?? 0,
       alive: character?.alive ?? false,
       duplicated: (names.get(shown) ?? 0) > 1,
-      knownRoleId: knownRoleFor(session, viewerId, seat.id),
+      knownRoleId: knownRoleFor(session, rules, viewerId, seat.id),
     };
   });
 }

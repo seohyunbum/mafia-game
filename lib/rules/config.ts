@@ -9,7 +9,7 @@
 
 import { isRoleId, type RoleId } from './types.ts'
 
-export const RULES_SCHEMA_VERSION = 4
+export const RULES_SCHEMA_VERSION = 5
 
 /**
  * 사회자가 깨우는 한 호출 (DESIGN.md §6.1).
@@ -28,6 +28,16 @@ export type LethalMode = { readonly kind: 'instant' } | { readonly kind: 'damage
 
 export interface RulesConfig {
   readonly startHp: number
+  /**
+   * 시작할 때 누가 누구를 아는가 (§4.4). 기준은 **배정 당시의 원래 진영**이다 —
+   * 전향해도 시작 때 나눈 정보는 사라지지 않는다.
+   * `cult` 는 미정(Q37)이라 `null` 이고, 그때는 모르는 것으로 처리한다.
+   */
+  readonly knowledge: {
+    readonly mafia: boolean
+    readonly citizen: boolean
+    readonly cult: boolean | null
+  }
   readonly nightKill: {
     readonly lethality: LethalMode
   }
@@ -307,8 +317,18 @@ export function parseRules(raw: unknown): RulesConfig {
 
   const executionResult = enumOf(dayVote, 'day_vote', 'execution_result', ['death', 'damage'] as const)
 
+  const knowledge = obj(root, 'knowledge')
+
   return {
     startHp: posInt(obj(root, 'character'), 'character', 'start_hp'),
+    knowledge: {
+      mafia: bool(knowledge, 'knowledge', 'mafia_know_each_other'),
+      citizen: bool(knowledge, 'knowledge', 'citizen_team_know_each_other'),
+      // 미정(null)은 "모른다" 로 처리한다. 임의값으로 채워 확정처럼 보이게 하지 않는다.
+      cult: knowledge['cult_know_each_other'] === null
+        ? null
+        : bool(knowledge, 'knowledge', 'cult_know_each_other'),
+    },
     nightKill: {
       lethality: lethality(nightKill, 'night_kill', bool(nightKill, 'night_kill', 'instant_death'), 'damage'),
     },

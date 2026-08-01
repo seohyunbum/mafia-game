@@ -14,7 +14,7 @@
  */
 
 import type { RulesConfig } from "../rules/config.ts";
-import { sniperCanFire } from "../rules/engine.ts";
+import { knownAllies, sniperCanFire } from "../rules/engine.ts";
 import type { Faction, Phase, RoleId, Verdict } from "../rules/types.ts";
 import {
   blockingHumanRequirements,
@@ -124,14 +124,13 @@ export function toViewModel(
   const steps = currentNightSteps(session, rules);
   const blocking = blockingHumanRequirements(session, rules);
 
-  // 같은 진영이라고 서로를 다 아는 게 아니다 — 시민팀은 아무도 모른다
-  // (session.ts 의 knownRoleFor 와 같은 규칙).
-  const allies: AllyView[] =
-    character.faction === "citizen"
-      ? []
-      : session.core.characters
-          .filter((c) => c.id !== viewerId && c.faction === character.faction)
-          .map((c) => ({ id: c.id, name: nameOf(session, c.id), roleId: c.roleId }));
+  // 시작할 때 나눠 받은 정보 (§4.4). 판정은 규칙이 하고(`knownAllies`), 기준은 **배정 당시의
+  // 원래 진영**이다 — 전향해도 시작 때 나눈 정보는 사라지지 않는다.
+  const allies: AllyView[] = knownAllies(session.core, rules, viewerId).map((c) => ({
+    id: c.id,
+    name: nameOf(session, c.id),
+    roleId: c.roleId,
+  }));
 
   // **듀오 짝은 진영과 무관하게 서로를 안다** (DESIGN.md §2 — "둘이 같이 편먹는다").
   // 이게 없으면 둘 다 시민팀일 때 서로를 못 알아보고, 같이 하는 의미가 사라진다.
@@ -157,7 +156,7 @@ export function toViewModel(
     mode: session.mode,
     day: session.core.day,
     phase: session.core.phase,
-    seats: seatViews(session, viewerId),
+    seats: seatViews(session, rules, viewerId),
     self: {
       id: character.id,
       name: nameOf(session, character.id),

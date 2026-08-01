@@ -5,7 +5,7 @@
  * 게임 진행 로직이 전부 바뀌었어도 표지의 아트 디렉션은 손대지 않는다.
  */
 
-import type { FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 /**
  * 랜딩이 아는 온라인 정보는 이 둘뿐이다 — 전송 세부(PeerJS·봉투·재접속)는 `duoSession` 이
  * 감춘다. 상태 이름도 랜딩이 쓰는 말로만 좁혔다.
@@ -23,6 +23,17 @@ export interface OnlineGameSession {
 }
 
 export type LandingDialog = "solo" | "online" | "create" | "join" | "rules" | null;
+
+
+/**
+ * 친구에게 보낼 초대 링크. 이 링크를 열면 방 코드가 채워진 참가 화면으로 바로 들어간다 —
+ * 코드를 불러 주고 받아 적는 단계가 사라진다.
+ */
+export function inviteLinkFor(roomCode: string): string {
+  if (typeof window === "undefined") return "";
+  const { origin, pathname } = window.location;
+  return `${origin}${pathname}?room=${roomCode}`;
+}
 
 export function Landing({
   dialog,
@@ -61,6 +72,7 @@ export function Landing({
   clearError: () => void;
   resetOnline: () => void;
 }) {
+  const [copied, setCopied] = useState(false);
   const submitSolo = (event: FormEvent) => {
     event.preventDefault();
     startLocalGame(playerName);
@@ -344,6 +356,20 @@ export function Landing({
                 >
                   {onlineSession.roomCode}
                 </div>
+                {onlineSession.role === "host" ? (
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => {
+                      const link = inviteLinkFor(onlineSession.roomCode);
+                      void navigator.clipboard?.writeText(link);
+                      setCopied(true);
+                      window.setTimeout(() => setCopied(false), 2000);
+                    }}
+                  >
+                    {copied ? "초대 링크를 복사했습니다" : "초대 링크 복사"}
+                  </button>
+                ) : null}
                 <div className="connection-status" aria-live="polite">
                   {!guestConnected && <span className="spinner" />}
                   {onlineSession.role === "host"
