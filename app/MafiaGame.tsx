@@ -207,6 +207,10 @@ export default function MafiaGame() {
     if (!raw) return;
     const code = normalizeRoomCode(raw);
     if (code === null) return;
+    // 초기 state 로 옮기면 규칙은 만족하지만 하이드레이션이 깨진다 — 이 화면은
+    // scripts/build-pages.mjs 가 정적 index.html 로 굳혀 모든 주소에 같은 HTML 을 내려주므로,
+    // 첫 렌더에서 location 을 읽으면 서버가 만든 HTML 과 달라진다. 이펙트가 맞는 자리다.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setRoomCodeInput(code);
     setDialog("join");
     // 주소창은 정리한다 — 새로고침 때마다 다시 열리면 성가시다
@@ -216,6 +220,11 @@ export default function MafiaGame() {
   // duo 컨트롤러의 변화를 화면으로 끌어온다
   useEffect(() => {
     if (!duo) return;
+    // 제대로 된 처방은 useSyncExternalStore 다. 그러려면 duo.snapshot() 이 호출마다 새 객체를
+    // 만들지 않고 notify 까지 같은 객체를 돌려줘야 하는데(안 그러면 무한 렌더), 그건
+    // duoSession 의 호스트·게스트 양쪽과 setDuoSnap 5군데를 함께 고치는 일이다.
+    // 온라인 듀오 경로를 실제로 돌려보지 않고 손대지 않는다 — 지금 동작은 정상이다.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setDuoSnap(duo.snapshot());
     return duo.subscribe(() => setDuoSnap(duo.snapshot()));
   }, [duo]);

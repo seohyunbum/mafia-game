@@ -211,7 +211,20 @@ async function main() {
   // Jekyll 이 _ 로 시작하는 파일을 지우지 않게 한다
   await writeFile(join(OUT_DIR, ".nojekyll"), "", "utf8");
   // 지금 사이트가 어느 커밋인지 남긴다 — 배포본과 소스를 대조하는 유일한 단서다
-  const commit = process.env.SOURCE_COMMIT ?? (await readFile(join(ROOT, ".git", "HEAD"), "utf8")).trim();
+  // .git/HEAD 는 브랜치에 있을 때 "ref: refs/heads/main" 이다 — 커밋 SHA 가 아니다.
+  // 그대로 쓰면 source-commit.txt 가 배포본과 소스를 대조하는 단서 노릇을 못 한다.
+  const commit =
+    process.env.SOURCE_COMMIT ??
+    (await new Promise((resolve, reject) => {
+      const child = spawn("git", ["rev-parse", "HEAD"], { cwd: ROOT, shell: true });
+      let out = "";
+      child.stdout?.on("data", (chunk) => (out += String(chunk)));
+      child.on("error", reject);
+      child.on("exit", (code) =>
+        code === 0 ? resolve(out.trim()) : reject(new Error("git rev-parse HEAD 실패")),
+      );
+    }));
+  if (!/^[0-9a-f]{40}$/.test(commit)) throw new Error(`배포 커밋이 SHA 가 아니다: ${commit}`);
   await writeFile(join(OUT_DIR, "source-commit.txt"), `${commit}\n`, "utf8");
 
   console.log(`완료 — ${OUT_DIR} (자산 참조 ${assetRefs}개, base ${BASE})`);

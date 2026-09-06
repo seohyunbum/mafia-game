@@ -7,7 +7,9 @@
 
 - 로컬 소스를 고쳐도 **배포하지 않으면 아이콘 화면은 한 글자도 바뀌지 않는다.**
 - 아이콘은 로컬 파일을 읽지 않는다 — Edge 앱 모드로 위 URL 을 여는 바로가기다.
-- 배포 절차는 [`README.md`](README.md) §배포 참조. 조립은 `scripts/build-pages.mjs` 가 한다.
+- **`main` push 가 곧 배포다** — `.github/workflows/pages.yml` 이 `npm run verify` 를 통과한 커밋만
+  `scripts/build-pages.mjs` 로 조립해 `gh-pages` 로 민다. 손으로 밀 일은 없다.
+  손으로 돌려야 할 때의 절차는 [`README.md`](README.md) §배포 참조.
 - `gh-pages` 의 `source-commit.txt` 가 지금 서비스 중인 소스 커밋이다. 배포본과 소스가
   어긋나는지 볼 때 여기부터 확인한다.
 

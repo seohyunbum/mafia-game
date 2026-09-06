@@ -1,0 +1,89 @@
+name: Verify and deploy Mafia Game
+
+# 이 저장소는 지금까지 CI 가 없었다. AGENTS.md 11항은 "커밋 전 npm run verify 를 통과한다"
+# 인데 아무도(무엇도) 그것을 강제하지 않았고, 실제로 테스트 185개가 러너 불일치로
+# 한 번도 돌지 않은 채 오래 있었다. 배포도 손으로 밀었다 — 아이콘이 여는 화면은
+# 로컬이 아니라 gh-pages 라서, 그 사이에 "고쳤는데 화면이 그대로"가 생긴다.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write # gh-pages 로 배포본을 밀어야 한다
+
+concurrency:
+  group: mafia-pages
+  cancel-in-progress: false
+
+env:
+  # wrangler 가 CI 에서 대화형 프롬프트·텔레메트리로 멈추지 않게 한다
+  WRANGLER_SEND_METRICS: "false"
+
+jobs:
+  verify-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # AGENTS.md 11항의 그 게이트다 — test(node --test 185개) + build + lint
+      - name: 전체 검증
+        run: npm run verify
+
+      # ---- 여기부터 배포. 검증이 통과해야만 온다 ----
+      # SSR 앱이라 빌드만으로는 index.html 이 안 나온다. 이 스크립트가 프로덕션 서버를
+      # 잠깐 띄워 / 를 받아 정적 HTML 로 굳히고 자산 경로를 /mafia-game/ 로 옮긴다.
+      - name: Pages 배포본 조립
+        run: node scripts/build-pages.mjs
+        env:
+          SOURCE_COMMIT: ${{ github.sha }}
+
+      - name: gh-pages 체크아웃
+        uses: actions/checkout@v5
+        with:
+          ref: gh-pages
+          path: .deploy
+
+      - name: gh-pages 갱신
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          # .git 만 남기고 갈아끼운다 — 지워진 자산(옛 해시)도 배포본에서 사라지게
+          find .deploy -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp -r dist/pages/. .deploy/
+          cd .deploy
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "배포본에 바뀐 것이 없다 — 커밋하지 않는다"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "deploy: ${GITHUB_SHA:0:7}" -m "source-commit ${GITHUB_SHA}"
+          git push origin HEAD:gh-pages
+
+      # README·AGENTS 가 말하는 최신성의 유일한 자가 이 파일이다. 공개 URL 에서 직접 확인한다.
+      - name: 공개 URL 에서 배포 커밋 대조
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          url="https://seohyunbum.github.io/mafia-game/source-commit.txt"
+          for attempt in $(seq 1 20); do
+            served="$(curl -fsSL --max-time 20 "$url" 2>/dev/null | tr -d '[:space:]' || true)"
+            if [ "$served" = "${GITHUB_SHA}" ]; then
+              echo "배포 확인: $served"
+              exit 0
+            fi
+            echo "  ($attempt/20) 아직 반영 전 — 받은 값: '${served:-없음}'"
+            sleep 15
+          done
+          echo "::error title=Mafia 배포 미반영::공개 URL 의 source-commit 이 ${GITHUB_SHA} 가 아니다"
+          exit 1

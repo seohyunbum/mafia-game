@@ -66,6 +66,10 @@ node scripts/build-pages.mjs
 
 이어서 `dist/pages/` 의 내용을 `gh-pages` 브랜치로 올리면 아이콘 화면이 갱신됩니다.
 
+**평소에는 손으로 하지 않습니다.** `main` 에 push 하면 GitHub Actions(`.github/workflows/pages.yml`)가 `npm run verify` 를 돌리고, 통과한 커밋만 위 절차대로
+조립해 `gh-pages` 로 올린 뒤, 공개 URL 의 `source-commit.txt` 가 그 커밋과 같은지까지 확인합니다.
+검증이 실패하면 배포는 일어나지 않고 공개 화면은 이전 상태로 남습니다.
+
 ## 규칙 정본
 
 확정 규칙은 [`docs/DESIGN.md`](docs/DESIGN.md), 수치는 [`data/`](data/) JSON 이 정본입니다.
