@@ -175,8 +175,17 @@ async function main() {
     cwd: ROOT,
     stdio: "ignore",
     shell: true,
+    // POSIX 에서 프로세스 그룹째 죽이려면 자식이 그룹 리더여야 한다. detached 없이 shell:true 로
+    // 띄우면 killTree 의 process.kill(-pid) 가 빗나가 서버가 살아남고, 그 자식 핸들이
+    // 이벤트 루프를 붙잡아 **조립을 끝낸 뒤에도 node 가 종료되지 않는다**.
+    // GitHub Actions 에서 실제로 그랬다 — 5초 만에 "완료" 를 찍고 19분을 서 있다가 취소됐고,
+    // 러너가 남은 프로세스로 "npm exec vinext start" 를 그대로 지목했다.
+    // Windows 는 taskkill /T /F 로 잡히던 터라 로컬에서는 보이지 않았다.
+    detached: process.platform !== "win32",
     env: { ...process.env, PORT: String(PORT), PAGES_BASE: BASE, PAGES_SITE_ORIGIN: SITE_ORIGIN },
   });
+  // 혹시 kill 이 또 빗나가도 이 프로세스는 제 할 일을 마치면 나갈 수 있어야 한다.
+  server.unref();
 
   let html;
   try {
