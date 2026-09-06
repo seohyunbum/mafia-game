@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { ConfigError, RULES_SCHEMA_VERSION, parseRules } from '../../lib/rules/config.ts'
 import { DATA_DIR, loadRules } from '../../lib/rules/data.ts'
 
-function rawRules(): Record<string, any> {
+function rawRules(): Record<string, Record<string, unknown>> {
   return JSON.parse(readFileSync(join(DATA_DIR, 'rules.json'), 'utf8'))
 }
 

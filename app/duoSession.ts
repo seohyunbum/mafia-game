@@ -280,7 +280,6 @@ export async function joinDuoRoom(options: {
   let room: PeerRoom | null = null;
   let status: PeerRoomStatus | "idle" = "idle";
   let view: ViewModel | null = null;
-  let hostName: string | null = null;
   let error: string | null = null;
 
   const notify = (): void => {
@@ -340,7 +339,9 @@ export async function joinDuoRoom(options: {
       roomCode,
       status,
       partnerConnected: status === "connected",
-      partnerName: hostName,
+      // 방장 이름은 프로토콜에 싣지 않는다 — 게임이 시작되면 좌석에서 보인다.
+      // 시작 전 대기 화면은 Landing 이 "참가자" 로 대신 부른다.
+      partnerName: null,
       view,
       error,
       started: view !== null,
