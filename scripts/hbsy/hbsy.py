@@ -6,6 +6,7 @@ Local index matches do not establish remote publication, authorship or priority.
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import base64
 import hashlib
 import io
@@ -14,6 +15,7 @@ import os
 import re
 import sys
 import tempfile
+import time
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
@@ -396,8 +398,51 @@ def _new_record(kind: str, profile: str, full: str, algorithm: str, title: str, 
     return record
 
 
+@contextmanager
+def _index_lock(index: Path):
+    """Cooperative OS lock; a persistent sibling avoids lock-inode replacement races."""
+    _no_links(index)
+    lock = Path(str(index) + ".hbsy-lock")
+    _no_links(lock)
+    with lock.open("a+b", buffering=0) as stream:
+        if stream.seek(0, os.SEEK_END) == 0:
+            stream.write(b"0")
+        deadline = time.monotonic() + 30
+        acquired = False
+        while not acquired:
+            stream.seek(0)
+            try:
+                if os.name == "nt":
+                    import msvcrt
+                    msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                acquired = True
+            except OSError as exc:
+                if exc.errno not in {11, 13, 35, 36} or time.monotonic() >= deadline:
+                    raise HBSYError("Cannot acquire registry lock; no record was appended") from exc
+                time.sleep(0.05)
+        try:
+            _no_links(index)
+            yield
+        finally:
+            stream.seek(0)
+            if os.name == "nt":
+                msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
+
+
 def _index_entries(index: Path) -> list:
     _no_links(index)
+    if not index.exists():
+        return []
+    with _index_lock(index):
+        return _index_entries_unlocked(index)
+
+
+def _index_entries_unlocked(index: Path) -> list:
     if not index.exists():
         return []
     entries = []
@@ -418,18 +463,22 @@ def _index_entry(record: dict, relative: str) -> dict:
 
 def append_index(index: Path, entry: dict, index_cache: dict | None = None) -> None:
     _validate_cache_identity(index, index_cache)
-    if canonical(entry) in index_cache["records"] if index_cache is not None else any(existing == entry for existing in _index_entries(index)):
-        return
     _no_links(index)
     index.parent.mkdir(parents=True, exist_ok=True)
-    # One append write; no read/replace that could lose a concurrent append.
-    with index.open("ab", buffering=0) as f:
-        encoded = canonical(entry) + b"\n"
-        if f.write(encoded) != len(encoded):
-            raise HBSYError("Incomplete index write; verification must be retried after index repair")
-        os.fsync(f.fileno())
+    encoded_record = canonical(entry)
+    with _index_lock(index):
+        if (encoded_record in index_cache["records"] if index_cache is not None
+                else any(existing == entry for existing in _index_entries_unlocked(index))):
+            return
+        # Windows O_APPEND alone can overwrite another process's concurrent write.
+        # Hold the same OS lock used by readers across the append and fsync.
+        with index.open("ab", buffering=0) as stream:
+            encoded = encoded_record + b"\n"
+            if stream.write(encoded) != len(encoded):
+                raise HBSYError("Incomplete index write; verification must be retried after index repair")
+            os.fsync(stream.fileno())
     if index_cache is not None:
-        index_cache["records"].add(canonical(entry))
+        index_cache["records"].add(encoded_record)
         index_cache["entries"].append(entry)
 
 

@@ -10,3 +10,6 @@ coverage/
 
 # Local Python signer cache
 __pycache__/
+
+# Persistent interprocess locks contain no signing material.
+*.hbsy-lock

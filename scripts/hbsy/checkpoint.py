@@ -142,13 +142,28 @@ def publish(root: Path, index: Path, pubkey: Path, project: str, *, expected_key
     rows = parse_rows(index.read_bytes(), pk, project)
     if not any(row['profile'] == 'public' for row in rows):
         raise hbsy.HBSYError('Current registry has no owner signature')
-    # The cumulative ledger alone cannot distinguish an old deployment from this build.
-    # Bind the latest record for each path in THIS invocation, before merging history.
-    current_records = {row['path']: {
-        'record_sha256': hbsy.sha(hbsy.canonical(row['record'])),
-        'hash': row['record']['hash'], 'kind': row['record']['kind'],
-        'profile': row['profile'],
-    } for row in rows}
+    # Only files actually present and verified now belong to this checkpoint.
+    # Missing historical paths remain in the append-only ledger, not current_records.
+    latest_rows = {row['path']: row for row in rows}
+    current_records = {}
+    cache = hbsy.load_index_cache(index)
+    for relative_path, row in latest_rows.items():
+        artifact = root / relative_path
+        hbsy._no_links(artifact)
+        if not artifact.is_file():
+            continue
+        if row['profile'] != 'public':
+            raise hbsy.HBSYError('Current artifact has no owner signature')
+        verified = hbsy.verify_document(artifact, 'public', index, pk=pk, root=root, index_cache=cache)
+        digest = hbsy.sha(hbsy.canonical(row['record']))
+        if not verified['ok'] or verified.get('record_sha256') != digest:
+            raise hbsy.HBSYError('Current artifact does not match its latest registry record')
+        current_records[relative_path] = {
+            'record_sha256': digest, 'hash': row['record']['hash'],
+            'kind': row['record']['kind'], 'profile': row['profile'],
+        }
+    if not current_records:
+        raise hbsy.HBSYError('No current artifacts were verified for this checkpoint')
     source = git(root, 'rev-parse', 'HEAD').stdout.decode().strip()
     ref = 'refs/heads/'+BRANCH
     for attempt in range(3):
