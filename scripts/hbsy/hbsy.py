@@ -363,6 +363,8 @@ def _embed(path: Path, artifact: dict, record: dict) -> tuple[Path, bytes]:
         return Path(str(path) + SIDECAR_SUFFIX), payload + b"\n"
     if path.suffix.lower() in TEXT_EXT:
         return path, artifact["body"] + b"\n<!-- hbsy-v2:" + base64.b64encode(payload) + b" -->\n"
+    if artifact.get("record") == record:
+        return path, artifact["data"]
     stream = io.BytesIO()
     with zipfile.ZipFile(stream, "w") as archive:
         archive.comment = artifact["comment"]
