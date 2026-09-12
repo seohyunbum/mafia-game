@@ -7,3 +7,6 @@ coverage/
 *.tsbuildinfo
 .env*
 !.env.example
+
+# Local Python signer cache
+__pycache__/

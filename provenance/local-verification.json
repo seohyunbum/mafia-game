@@ -1,0 +1,24 @@
+{
+  "project": "mafia-game",
+  "directory": "dist/pages",
+  "manifest_hash": "7c561daa900aada83ade2ee323f892ead265ec93d65af0e2713d3bfccff675be",
+  "signed_files": 20,
+  "checks": {
+    "valid_signature": true,
+    "tampered_html_rejected": true,
+    "added_file_rejected": true,
+    "missing_file_rejected": true,
+    "invalid_signing_key_rejected_before_write": true,
+    "restored_bytes_verify": true
+  },
+  "remote_checked": false,
+  "security_update_recheck": {
+    "signature_verified": true,
+    "standalone_signature_verified": true,
+    "signer_sha256": {
+      "hbsy.py": "bb4aec916a87dbe0650422b602225debb0fe68fac7fa2e45e9b3d8bd555dbd29",
+      "release.py": "309d7466cd9b83e3f23923e358255b94274dd91fa2b2e5af9e80f31cdeadfa9f"
+    },
+    "remote_checked": false
+  }
+}

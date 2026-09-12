@@ -12,7 +12,10 @@
     "test": "node --test \"tests/**/*.test.ts\"",
     "test:render": "npm run build && node --test tests/rendered-html.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
-    "verify": "npm run test && npm run build && npm run lint"
+    "verify": "npm run test && npm run build && npm run lint",
+    "hbsy:seal": "node scripts/hbsy-release.mjs seal",
+    "hbsy:verify": "node scripts/hbsy-release.mjs verify",
+    "build:pages": "node scripts/build-pages.mjs"
   },
   "dependencies": {
     "next": "16.2.12",

@@ -1,3 +1,6 @@
 * text=auto
 *.ps1 text eol=crlf
 *.cmd text eol=crlf
+# SHA-pinned signer copies must retain identical bytes on Windows and CI.
+/scripts/hbsy/*.py text eol=lf
+/scripts/hbsy/requirements.txt text eol=lf

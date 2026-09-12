@@ -15,7 +15,7 @@
  * 사용: node scripts/build-pages.mjs [--base /mafia-game/] [--skip-build]
  */
 
-import { spawn } from "node:child_process";
+import { spawn, execFileSync } from "node:child_process";
 import { cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -236,6 +236,7 @@ async function main() {
   if (!/^[0-9a-f]{40}$/.test(commit)) throw new Error(`배포 커밋이 SHA 가 아니다: ${commit}`);
   await writeFile(join(OUT_DIR, "source-commit.txt"), `${commit}\n`, "utf8");
 
+  execFileSync(process.execPath, ["scripts/hbsy-release.mjs", "seal"], { cwd: ROOT, stdio: "inherit" });
   console.log(`완료 — ${OUT_DIR} (자산 참조 ${assetRefs}개, base ${BASE})`);
 }
 

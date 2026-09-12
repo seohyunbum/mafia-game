@@ -1,0 +1,13 @@
+{
+  "project": "mafia-game",
+  "scanned_files": 36,
+  "commit_candidate_files": 15,
+  "private_key_exact_matches": 0,
+  "representations_checked": [
+    "base64",
+    "raw",
+    "hex"
+  ],
+  "secret_value_logged": false,
+  "network_used": false
+}
