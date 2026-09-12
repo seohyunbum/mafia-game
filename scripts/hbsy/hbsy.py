@@ -305,6 +305,7 @@ def _package_hash(entries: list, comment: bytes) -> str:
 
 def _read_artifact(path: Path, storage: str = "auto") -> dict:
     _no_links(path)
+    original_stat = path.stat()
     data = path.read_bytes()
     ext = path.suffix.lower()
     sidecar = Path(str(path) + SIDECAR_SUFFIX)
@@ -333,21 +334,21 @@ def _read_artifact(path: Path, storage: str = "auto") -> dict:
         else:
             full, algorithm = sha(data), "bytes-v1"
         return {"hash": full, "algorithm": algorithm, "record": record,
-                "body": data, "legacy": False, "data": data, "storage": "sidecar"}
+                "body": data, "legacy": False, "data": data, "original_times_ns": (original_stat.st_atime_ns, original_stat.st_mtime_ns), "storage": "sidecar"}
     if ext in TEXT_EXT:
         body, record = _text_parts(data)
         return {"hash": _text_hash(body), "algorithm": "utf8-lf-v1", "record": record,
-                "body": body, "legacy": _legacy(body), "data": data}
+                "body": body, "legacy": _legacy(body), "data": data, "original_times_ns": (original_stat.st_atime_ns, original_stat.st_mtime_ns)}
     if ext == ".txt":
         sidecar = Path(str(path) + ".hbsy.json")
         _no_links(sidecar)
         record = _decode_record(sidecar.read_bytes()) if sidecar.exists() else None
         return {"hash": _text_hash(data), "algorithm": "utf8-lf-v1", "record": record,
-                "body": data, "legacy": _legacy(data), "data": data}
+                "body": data, "legacy": _legacy(data), "data": data, "original_times_ns": (original_stat.st_atime_ns, original_stat.st_mtime_ns)}
     if ext in OFFICE_EXT:
         entries, comment, record = _package(data)
         return {"hash": _package_hash(entries, comment), "algorithm": "ooxml-package-v1",
-                "record": record, "entries": entries, "comment": comment, "data": data,
+                "record": record, "entries": entries, "comment": comment, "data": data, "original_times_ns": (original_stat.st_atime_ns, original_stat.st_mtime_ns),
                 "legacy": any(_legacy(body) or re.search(rb"hbsy:[0-9a-f]{8}", body)
                               for info, body in entries if info.filename == "docProps/core.xml")}
     raise HBSYError(f"Unsupported artifact format: {ext}; use a distribution manifest")
@@ -559,6 +560,16 @@ def verify_document(path: Path | str, profile: str, index: Path | str, pk=None, 
 
 
 
+def _write_signed_artifact(path: Path, artifact: dict, target: Path, data: bytes) -> None:
+    if not target.exists() or target.read_bytes() != data:
+        _atomic_write(target, data)
+        if target == path:
+            # Adding/replacing our metadata is not a content modification time.
+            _no_links(target)
+            options = {"follow_symlinks": False} if os.utime in os.supports_follow_symlinks else {}
+            os.utime(target, ns=artifact["original_times_ns"], **options)
+
+
 def sign_artifact(path: Path | str, profile: str = "work", index: Path | str | None = None,
                   root: Path | str | None = None, *, storage: str = "auto",
                   title: str | None = None, index_cache: dict | None = None, sk=None) -> dict:
@@ -591,8 +602,7 @@ def sign_artifact(path: Path | str, profile: str = "work", index: Path | str | N
     # Do not overwrite an artifact changed by a concurrent generator since read.
     if path.read_bytes() != artifact["data"]:
         raise HBSYError("Artifact changed during registration")
-    if not target.exists() or target.read_bytes() != data:
-        _atomic_write(target, data)
+    _write_signed_artifact(path, artifact, target, data)
     append_index(index, _index_entry(record, relative), cache)
     result = verify_document(path, profile, index, sk.public_key() if sk else None,
                              root=scope_root, index_cache=cache)
@@ -630,10 +640,12 @@ def cmd_sign(args) -> int:
         target, data = _embed(path, artifact, record)
         if target.resolve() == index.resolve():
             raise HBSYError("Index and artifact output must be different files")
-        pending.append((target, data, _index_entry(record, relative)))
-    for target, data, entry in pending:
-        if not target.exists() or target.read_bytes() != data:
-            _atomic_write(target, data)
+        pending.append((path, artifact, target, data, _index_entry(record, relative)))
+    for path, artifact, target, data, entry in pending:
+        if path.read_bytes() != artifact["data"]:
+            raise HBSYError("Artifact changed during registration")
+    for path, artifact, target, data, entry in pending:
+        _write_signed_artifact(path, artifact, target, data)
         append_index(index, entry)
         print(f"SIGNED {entry['path']} {entry['profile']} {entry['hash']}")
     print(f"Local index: {index}; remote publication has not been checked")

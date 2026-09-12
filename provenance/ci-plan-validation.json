@@ -1,0 +1,18 @@
+{
+  "project": "mafia-game",
+  "workflow": ".github/workflows/pages.yml",
+  "job": "verify-and-deploy",
+  "secret_limited_to_final_build_sign_step": true,
+  "verify_before_checkpoint_before_deployment": true,
+  "scoped_contents_write": true,
+  "registry_rows_checked": 4,
+  "signer_hashes_match": true,
+  "remote_published": false,
+  "final_vendor_hashes": {
+    "hbsy.py": "f4b29b39240a30b97bbe899e9eb6de3dc065eb525a89a24686320a7a92112b23",
+    "release.py": "309d7466cd9b83e3f23923e358255b94274dd91fa2b2e5af9e80f31cdeadfa9f",
+    "requirements.txt": "f6d052154d39f9e9c8590108e950e5a93db39e428a0a533fcacbc4d337302f74",
+    "checkpoint.py": "eafa397a824bacab30dbaedbe7d9976b8455cc29a71e3c45f99dfb544e047afd"
+  },
+  "current_source_manifest_binding": "checkpoint.current_records[path] matches current signed manifest record_sha256 and hash"
+}

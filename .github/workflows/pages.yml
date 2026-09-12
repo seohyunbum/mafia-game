@@ -41,10 +41,26 @@ jobs:
       # ---- 여기부터 배포. 검증이 통과해야만 온다 ----
       # SSR 앱이라 빌드만으로는 index.html 이 안 나온다. 이 스크립트가 프로덕션 서버를
       # 잠깐 띄워 / 를 받아 정적 HTML 로 굳히고 자산 경로를 /mafia-game/ 로 옮긴다.
-      - name: Pages 배포본 조립
+      - name: Install pinned signing dependency
+        run: python -m pip install --disable-pip-version-check -r scripts/hbsy/requirements.txt
+      - name: Pages 배포본 조립 및 서명
         run: node scripts/build-pages.mjs
         env:
           SOURCE_COMMIT: ${{ github.sha }}
+          HBSY_SECRET_KEY: ${{ secrets.HBSY_SECRET_KEY }}
+      - name: Verify final signed distribution
+        run: node scripts/hbsy-release.mjs verify
+      - name: Register signed release in GitHub
+        run: python scripts/hbsy/checkpoint.py --index provenance/index.jsonl --pubkey .github/hbsy-pubkey.b64 --project mafia-game
+      - name: Keep signed provenance evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: hbsy-provenance-${{ github.sha }}
+          path: |
+            provenance/index.jsonl
+            dist/pages/hbsy.manifest.json
+            dist/pages/hbsy.pubkey
+          if-no-files-found: error
 
       - name: gh-pages 체크아웃
         uses: actions/checkout@v5

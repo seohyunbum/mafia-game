@@ -25,3 +25,12 @@ node scripts/hbsy-release.mjs verify --standalone
 실제 최종 산출물 생성·서명·고정키 검증을 통과했다. 임시 사본으로 본문 변조, 파일 추가·삭제, 잘못된 개인키의 서명 거절을 검사한 근거는 `local-verification.json`이다. 로컬 검증 성공을 GitHub 등록·실제 사이트 배포 완료로 표시하지 않는다.
 
 CI 비밀키 등록과 원격 등록·배포는 별도 완료 확인이 필요하다. 그 승인·설정이 완료되기 전에는 이 변경을 main에 push하여 자동 배포를 실행하지 않는다.
+
+
+## GitHub 자동 등록 계약
+
+GitHub Actions는 의존성 설치·일반 테스트와 분리한 최종 빌드·서명 단계에만 `HBSY_SECRET_KEY`를 전달한다. 서명을 생략하는 빌드 경로는 추가하지 않는다. 키 없는 독립 검증과 같은 저장소의 `hbsy-provenance` 원장 등록이 성공해야 Pages 배포를 진행한다.
+
+공개 검증 원장: https://github.com/seohyunbum/mafia-game/tree/hbsy-provenance
+
+`checkpoint.json`은 소스 커밋·Actions 실행 ID·원장 SHA·공개키 지문을 기록한다. `provenance/index.jsonl`에는 서명된 최종 산출물 등록 이력이 누적되며, 기존 이력을 보존하는 일반 fast-forward push만 사용한다. 개인키와 산출물 본문은 이 검증 브랜치에 넣지 않는다. 실제 배포 완료는 Actions 실행 및 공개 URL의 파일 해시 대조를 별도로 확인한다.
