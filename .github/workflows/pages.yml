@@ -43,10 +43,14 @@ jobs:
       # 잠깐 띄워 / 를 받아 정적 HTML 로 굳히고 자산 경로를 /mafia-game/ 로 옮긴다.
       - name: Install pinned signing dependency
         run: python -m pip install --disable-pip-version-check -r scripts/hbsy/requirements.txt
-      - name: Pages 배포본 조립 및 서명
-        run: node scripts/build-pages.mjs
+      # 빌드·프리렌더 서버(외부 npm 코드)는 서명 키 없이 조립만 한다. 서명은 다음 단계에서 키와 함께.
+      - name: Pages 배포본 조립 (서명 키 없이)
+        run: node scripts/build-pages.mjs --no-seal
         env:
           SOURCE_COMMIT: ${{ github.sha }}
+      - name: Pages 배포본 서명
+        run: node scripts/hbsy-release.mjs seal
+        env:
           HBSY_SECRET_KEY: ${{ secrets.HBSY_SECRET_KEY }}
       - name: Verify final signed distribution
         run: node scripts/hbsy-release.mjs verify

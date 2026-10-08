@@ -20,13 +20,17 @@ except ImportError:
 OWNER = 'seohyunbum'
 BRANCH = 'hbsy-provenance'
 EXPECTED_KEY_ID = '363071bd27767a1f5e3c916c3f385480e199ae25ebc867cdc8a5a2c624d0a061'
+# Public game repositories vendor this file verbatim, so it names only public projects.
+# Private projects keep their scopes in checkpoint_scopes.json beside this file, which is
+# never vendored into a public repository (test_checkpoint_scopes.py enforces both halves).
 SCOPES = {
     'YUNU_GAME': ('dist/',), 'blaster': ('dist/',), 'wave-arena': ('_site/',),
     'last_squard': ('dist/',), 'mafia-game': ('dist/',), 'brick-city-defense': ('_site/',),
-    'family-ai-studio': ('dist/',), 'AX_team': ('.next/',),
-    'asset-python-workspace': ('charts/',),
-    'war_3D': ('app/', 'game/', 'data/', 'hbsy-', 'live/', 'snapshot/'),
 }
+PRIVATE_SCOPES_FILE = Path(__file__).with_name('checkpoint_scopes.json')
+if PRIVATE_SCOPES_FILE.is_file():
+    SCOPES.update({str(name): tuple(str(prefix) for prefix in prefixes) for name, prefixes
+                   in json.loads(PRIVATE_SCOPES_FILE.read_text(encoding='utf-8')).items()})
 
 
 def git(root: Path, *args: str, data=None, env=None, check=True):
